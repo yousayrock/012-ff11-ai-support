@@ -103,8 +103,11 @@ import urllib.request
 
 try:
     import pyaudio
+    PYAUDIO_OK = True
 except ImportError:
-    print("pip install pyaudio"); exit(1)
+    pyaudio = None
+    PYAUDIO_OK = False
+    print("[MIC] pyaudio なし → マイク入力無効（VOICE_THRESHOLD=99999 で継続）")
 
 try:
     import anthropic
@@ -328,12 +331,15 @@ def kb_add(q: str, a: str, verified: bool = False):
 #  システムプロンプト
 # ═══════════════════════════════════════════════════════════════════
 
-FF11_SYSTEM = """あなたは「みっぴ」というAIネコです。
-2126年の未来からゆっぴのもとに派遣された、FF11（Final Fantasy XI）を20年以上プレイしてきた先輩プレイヤーAIネコです。
+FF11_SYSTEM = """あなたは「ミア（Mia Rinos）」というAIキャラクターです。
+冒険者系VTuberで、ミコッテ系（獣人）。明るく好奇心旺盛な性格。
+FF11（Final Fantasy XI）を20年以上プレイしてきた先輩プレイヤーAIです。
 
 【キャラクター設定】
-- 名前: みっぴ
-- 口調: 関西弁。「〜やで」「〜やん」「〜ねん」「めっちゃ」を自然に使う
+- 名前: ミア（Mia Rinos）
+- 種族: ミスラ（FF11の獣人族）
+- 口調: 明るくフレンドリー。「〜だよ！」「〜ね！」「いっしょに冒険しよ〜！」口ぐせ
+- 好き: 旅・発見・おいしいごはん / 苦手: 退屈・高いところ
 - ゆっぴはFF11プレイ中で手が離せない → 短く即答が基本
 
 【絶対に言わない】
@@ -381,10 +387,10 @@ MNK SAM ← 前衛扇状
  WHM   ← 射程外ヒール
 
 【口調例】
-「サラマンダーのWSはインファーノやで！前衛は必ず散開して！」
-「ちょっと待って、ハルシオンの性能調べてくるわ！」
-「うーん、それ正確な数値わからんから調べてくるわ〜」
-「めっちゃ危ないやん！速攻回避して！」
+「サラマンダーのWSはインファーノだよ！前衛は必ず散開してね！」
+「ちょっと待って、ハルシオンの性能調べてくる！いっしょに冒険しよ〜！」
+「うーん、それ正確な数値わからないから調べてくるね〜」
+「めっちゃ危ない！速攻回避して！」
 """
 
 # ═══════════════════════════════════════════════════════════════════
@@ -410,7 +416,7 @@ class FF11System:
 
     def initialize(self):
         print("=" * 55)
-        print("  012号 FF11アシスタントくん みっぴ 起動中...")
+        print("  012号 FF11アシスタントくん ミア 起動中...")
         print("=" * 55)
         if not ANTHROPIC_API_KEY:
             print("ERROR: .env に ANTHROPIC_API_KEY を設定してください"); exit(1)
@@ -549,7 +555,7 @@ class FF11System:
             print(f"[KB] ヒット (hits={cached['hits']}): {user_text[:30]}")
             self.conversation.append({"role": "assistant", "content": reply})
             await self.browser_send({"cmd": "reply", "text": reply})
-            print(f"[みっぴ] {reply[:120]}{'...' if len(reply)>120 else ''}")
+            print(f"[ミア] {reply[:120]}{'...' if len(reply)>120 else ''}")
             try:
                 await self._speak_sentence(reply)
             except Exception as e:
@@ -557,7 +563,7 @@ class FF11System:
             self.interrupt_req = False
             return reply
 
-        await self.browser_send({"cmd": "setFace", "face": "think", "duration": 8000})
+        await self.browser_send({"cmd": "setStamp", "key": "nani", "duration": 8000})
 
         SPLIT_RE   = re.compile(r"[。！？!?\n]")
         full_reply = ""
@@ -572,7 +578,7 @@ class FF11System:
             if search_results:
                 announced = True
                 print(f"[SEARCH] DDG ヒット: {len(search_results)}文字")
-                await self.browser_send({"cmd": "setFace", "face": "think", "duration": 8000})
+                await self.browser_send({"cmd": "setStamp", "key": "nani", "duration": 8000})
                 # 検索結果を「参考情報（内部知識）」として注入
                 # 「検索結果」という言葉を出さず、みっぴ自身の知識として答えさせる
                 search_msgs[-1] = {
@@ -615,7 +621,7 @@ class FF11System:
         # ① ブラウザに返答を先に送る（TTSが失敗してもUIには表示される）
         self.conversation.append({"role": "assistant", "content": full_reply})
         await self.browser_send({"cmd": "reply", "text": full_reply})
-        print(f"[みっぴ] {full_reply[:120]}{'...' if len(full_reply) > 120 else ''}")
+        print(f"[ミア] {full_reply[:120]}{'...' if len(full_reply) > 120 else ''}")
 
         # KBには検索済みデータのみ保存（verified=Trueのみ）
         # announced=True = 実際にweb_searchが使われた
@@ -716,6 +722,18 @@ class FF11System:
         class H(http.server.BaseHTTPRequestHandler):
             def log_message(_, *a): pass
             def do_GET(_):
+                req = _.path.lstrip('/')
+                if req.startswith('mia/') and req.endswith('.png'):
+                    img_path = STATIC_DIR / req
+                    if img_path.exists():
+                        data = img_path.read_bytes()
+                        _.send_response(200)
+                        _.send_header("Content-Type", "image/png")
+                        _.send_header("Content-Length", str(len(data)))
+                        _.end_headers()
+                        _.wfile.write(data)
+                        return
+                    _.send_error(404); return
                 path = STATIC_DIR / "012_ff11.html"
                 if not path.exists():
                     _.send_error(404); return
@@ -772,6 +790,9 @@ class FF11System:
         return np.interp(x_new, x_old, pcm.astype(np.float64)).astype(np.int16)
 
     def _mic_loop(self):
+        if not PYAUDIO_OK:
+            print("[MIC] pyaudio 未インストール → マイク入力スキップ")
+            return
         if VOICE_THRESHOLD >= 9999:
             print("[MIC] 音声入力無効（VOICE_THRESHOLD=99999）。テキスト入力のみ有効。")
             return  # 閾値が高すぎる場合はマイクを起動しない

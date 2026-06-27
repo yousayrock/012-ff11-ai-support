@@ -2,210 +2,425 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>012 FF11 みっぴ</title>
+<title>012 FF11 ミア</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { background:transparent; width:100%; height:100%; overflow:hidden;
-  font-family:'Meiryo','Yu Gothic UI','Noto Sans JP',sans-serif; }
+html, body {
+  background:transparent !important;
+  background-color:rgba(0,0,0,0) !important;
+  width:100%; height:100%; overflow:hidden;
+  font-family:'Meiryo','Yu Gothic UI','Noto Sans JP',sans-serif;
+}
 
-#container { position:fixed; bottom:12px; right:12px; width:280px;
-  display:flex; flex-direction:column; align-items:center; }
+/* ══════════════════════════════════════════════════
+   字幕テロップバー — 独立・ドラッグ可
+══════════════════════════════════════════════════ */
+#telop-bar {
+  position:fixed;
+  width:76%;
+  padding:0 0 10px 0;
+  background:rgba(8,4,1,0.72);
+  border-radius:10px;
+  text-align:center;
+  opacity:0;
+  transition:opacity 0.35s ease;
+  z-index:900;
+  border:1px solid rgba(200,150,42,0.3);
+  box-shadow:0 4px 24px rgba(0,0,0,0.55);
+  min-width:220px;
+  cursor:default;
+}
+#telop-bar.show { opacity:1; }
 
-/* ── キャラ浮遊 ── */
-.cat-area { width:220px; display:flex; flex-direction:column; align-items:center;
-  animation:float 5s ease-in-out infinite; cursor:pointer; user-select:none; }
-@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
-.wrap { animation:sway 4.5s ease-in-out infinite; transform-origin:center bottom; }
-.wrap.talking { animation:tsway 0.5s ease-in-out infinite; }
-@keyframes sway { 0%,100%{transform:rotate(0deg) translateY(0);}
-  30%{transform:rotate(5deg) translateY(-12px);} 70%{transform:rotate(-4deg) translateY(-9px);} }
-@keyframes tsway { 0%,100%{transform:rotate(0deg) translateY(0);}
-  33%{transform:rotate(6deg) translateY(-14px);} 66%{transform:rotate(-5deg) translateY(-11px);} }
+#telop-grip {
+  height:14px; cursor:grab; display:flex;
+  align-items:center; justify-content:center; padding-top:4px;
+}
+#telop-grip:active { cursor:grabbing; }
+#telop-grip::before {
+  content:''; width:32px; height:3px;
+  background:rgba(200,150,42,0.5); border-radius:2px;
+}
 
-/* ── テロップ（返答表示・常時） ── */
-#bubble { position:relative; width:260px; max-height:180px; overflow-y:auto;
-  padding:10px 14px; background:rgba(6,8,18,0.92);
-  border:1px solid rgba(0,245,255,0.22); border-radius:12px;
-  color:#dde8f0; font-size:12px; line-height:1.7; word-break:break-all;
-  opacity:0; transform:translateY(4px);
-  transition:opacity 0.2s, transform 0.2s; margin-top:-6px;
-  white-space:pre-wrap; }
-#bubble.show { opacity:1; transform:translateY(0); }
-#bubble::after { content:''; position:absolute; top:-8px; right:44px;
-  border:8px solid transparent; border-bottom:8px solid rgba(6,8,18,0.92); }
-#bubble::-webkit-scrollbar { width:3px; }
-#bubble::-webkit-scrollbar-thumb { background:rgba(0,245,255,0.2); border-radius:2px; }
+#telop-inner {
+  color:#fff8e8; font-size:19px; line-height:1.75;
+  text-shadow:0 0 10px rgba(0,0,0,0.95), 2px 2px 6px rgba(0,0,0,0.95);
+  letter-spacing:0.05em; white-space:pre-wrap; word-break:break-all;
+  min-height:1.75em; padding:0 24px;
+  transition:opacity 0.25s ease;
+}
+#telop-inner.fade { opacity:0; }
 
-/* ── パネル（長い返答・会話ログ） ── */
-#panel { width:280px; background:rgba(6,9,18,0.93);
-  border:1px solid rgba(0,245,255,0.18); border-radius:10px;
-  overflow:hidden; max-height:0; opacity:0;
-  transition:max-height 0.3s ease, opacity 0.3s ease; margin-top:4px; }
-#panel.open { max-height:380px; opacity:1; }
+/* ══════════════════════════════════════════════════
+   チャットパネル — 独立・ドラッグ可
+══════════════════════════════════════════════════ */
+#panel {
+  position:fixed;
+  width:280px;
+  background:rgba(255,248,230,0.97);
+  border:2px solid #c8962a; border-radius:16px;
+  overflow:hidden;
+  max-height:0; opacity:0;
+  transition:max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.28s ease;
+  box-shadow:0 4px 16px rgba(180,120,20,0.18);
+  z-index:1000;
+  transform-origin:top left;
+}
+#panel.open { max-height:440px; opacity:1; }
 
-#panel-header { display:flex; align-items:center; gap:6px;
-  padding:6px 10px; border-bottom:1px solid rgba(0,245,255,0.1); }
-#panel-header .title { font-size:10px; color:rgba(0,245,255,0.6); letter-spacing:1px; }
-#mic-dot { width:6px; height:6px; background:rgba(255,255,255,0.2);
-  border-radius:50%; transition:background 0.2s; }
-#mic-dot.active  { background:#00f5ff; box-shadow:0 0 5px rgba(0,245,255,0.6); }
-#mic-dot.recording { background:#ff4060; animation:mpulse 0.6s infinite; }
+/* パネルヘッダー（ドラッグハンドル） */
+#panel-header {
+  display:flex; align-items:center; gap:6px;
+  padding:8px 12px; border-bottom:1px solid rgba(180,120,20,0.2);
+  background:rgba(200,150,42,0.12);
+  cursor:grab; user-select:none;
+}
+#panel-header:active { cursor:grabbing; }
+#panel-header .title { font-size:10px; color:#8a6010; letter-spacing:1.5px; font-weight:bold; }
+
+#mic-dot {
+  width:7px; height:7px; background:rgba(180,120,20,0.25);
+  border-radius:50%; transition:background 0.2s; flex-shrink:0;
+}
+#mic-dot.active   { background:#c8962a; box-shadow:0 0 5px rgba(200,150,42,0.6); }
+#mic-dot.recording{ background:#e04040; animation:mpulse 0.6s infinite; }
 @keyframes mpulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
-#panel-close { margin-left:auto; font-size:10px; color:rgba(255,255,255,0.3); cursor:pointer; }
 
-/* 会話ログ */
-#chat-log { height:200px; overflow-y:auto; padding:8px 10px;
-  display:flex; flex-direction:column; gap:6px; }
+#panel-close {
+  margin-left:auto; font-size:12px; color:rgba(100,70,20,0.5);
+  cursor:pointer; padding:2px 4px; flex-shrink:0;
+}
+#panel-close:hover { color:#c8962a; }
+
+/* 自動クローズバー */
+#auto-close-bar { height:2px; background:rgba(200,150,42,0.15); }
+#auto-close-progress {
+  height:100%; width:100%;
+  background:linear-gradient(90deg,#c8962a,#e8b840);
+  transform-origin:left; transition:transform linear;
+}
+
+/* タブ */
+#panel-tabs {
+  display:flex; border-bottom:1px solid rgba(180,120,20,0.18);
+  background:rgba(200,150,42,0.06);
+}
+.tab-btn {
+  flex:1; padding:5px 4px; font-size:10px; color:#8a6010;
+  background:none; border:none; border-bottom:2px solid transparent;
+  cursor:pointer; letter-spacing:0.8px; font-weight:bold;
+  font-family:inherit; transition:background 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { background:rgba(200,150,42,0.1); }
+.tab-btn.active {
+  background:rgba(200,150,42,0.18); border-bottom-color:#c8962a; color:#7a4e00;
+}
+
+/* タブコンテンツ */
+.tab-content { display:none; flex-direction:column; }
+.tab-content.active { display:flex; }
+
+#chat-log {
+  height:210px; overflow-y:auto; padding:8px 10px;
+  display:flex; flex-direction:column; gap:6px;
+}
 #chat-log::-webkit-scrollbar { width:3px; }
-#chat-log::-webkit-scrollbar-thumb { background:rgba(0,245,255,0.2); border-radius:2px; }
+#chat-log::-webkit-scrollbar-thumb { background:rgba(180,120,20,0.25); border-radius:2px; }
 
-.msg-user { align-self:flex-end; max-width:85%;
-  background:rgba(0,120,160,0.25); border:1px solid rgba(0,180,220,0.2);
-  border-radius:8px 8px 0 8px; padding:5px 10px;
-  font-size:11px; color:#9ac8e0; white-space:pre-wrap; word-break:break-all; }
-.msg-mippi { align-self:flex-start; max-width:92%;
-  background:rgba(20,26,40,0.7); border:1px solid rgba(0,245,255,0.12);
-  border-radius:8px 8px 8px 0; padding:6px 10px;
-  font-size:11px; color:#c8d8e8; white-space:pre-wrap; word-break:break-all;
-  line-height:1.7; }
+.msg-user {
+  align-self:flex-end; max-width:85%;
+  background:rgba(200,150,42,0.15); border:1px solid rgba(180,120,20,0.25);
+  border-radius:12px 12px 2px 12px; padding:5px 10px;
+  font-size:11px; color:#5a3a0a; white-space:pre-wrap; word-break:break-all;
+}
+.msg-mippi {
+  align-self:flex-start; max-width:92%;
+  background:rgba(255,255,255,0.7); border:1px solid rgba(180,120,20,0.2);
+  border-radius:12px 12px 12px 2px; padding:6px 10px;
+  font-size:11px; color:#3a2a1a; white-space:pre-wrap; word-break:break-all; line-height:1.7;
+}
 .msg-mippi.diagram { font-family:'Consolas','Courier New',monospace; font-size:10px; }
 
-/* 入力エリア */
-#input-area { display:flex; gap:5px; padding:6px 8px;
-  border-top:1px solid rgba(0,245,255,0.1); align-items:center; }
-#text-input { flex:1; background:rgba(255,255,255,0.05);
-  border:1px solid rgba(255,255,255,0.1); border-radius:16px;
-  padding:5px 10px; font-size:11px; color:#c0d0e0;
-  font-family:inherit; outline:none; }
-#text-input:focus { border-color:rgba(0,245,255,0.4); }
-#text-input::placeholder { color:rgba(255,255,255,0.2); }
-#send-btn { width:26px; height:26px; background:rgba(0,245,255,0.1);
-  border:1px solid rgba(0,245,255,0.3); border-radius:50%;
-  color:rgba(0,245,255,0.8); font-size:11px; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-#send-btn:hover { background:rgba(0,245,255,0.2); }
+#input-area {
+  display:flex; gap:5px; padding:6px 10px;
+  border-top:1px solid rgba(180,120,20,0.15); align-items:center;
+}
+#text-input {
+  flex:1; background:rgba(255,255,255,0.8);
+  border:1px solid rgba(180,120,20,0.3); border-radius:16px;
+  padding:5px 10px; font-size:11px; color:#3a2a1a;
+  font-family:inherit; outline:none;
+}
+#text-input:focus { border-color:#c8962a; box-shadow:0 0 0 2px rgba(200,150,42,0.15); }
+#text-input::placeholder { color:rgba(100,70,20,0.4); }
+#send-btn {
+  width:28px; height:28px; background:rgba(200,150,42,0.2);
+  border:1.5px solid #c8962a; border-radius:50%;
+  color:#8a6010; font-size:12px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+#send-btn:hover { background:rgba(200,150,42,0.4); }
+
+/* メモタブ */
+#memo-area {
+  flex:1; min-height:240px; resize:none;
+  background:rgba(255,255,255,0.6);
+  border:none; border-top:1px solid rgba(180,120,20,0.1);
+  padding:8px 10px; font-size:11px; color:#3a2a1a;
+  font-family:inherit; outline:none; line-height:1.7;
+}
+#memo-area::placeholder { color:rgba(120,80,20,0.4); }
+
+/* ══════════════════════════════════════════════════
+   ミアコンテナ — 右下固定（窓ごと移動）
+══════════════════════════════════════════════════ */
+#container {
+  position:fixed; bottom:12px; right:12px;
+  width:280px;
+  display:flex; flex-direction:column; align-items:center;
+  z-index:1000;
+}
+
+#resize-handle {
+  position:absolute; left:-5px; top:0; bottom:0; width:10px;
+  cursor:ew-resize; z-index:200;
+  border-left:2px solid transparent; transition:border-color 0.15s;
+}
+#resize-handle:hover { border-left-color:rgba(200,150,42,0.5); }
+
+#main-area { position:relative; width:100%; height:290px; flex-shrink:0; }
+
+.cat-area {
+  position:absolute; bottom:0; left:0; right:0;
+  display:flex; justify-content:center;
+  animation:float 5s ease-in-out infinite;
+  cursor:grab; user-select:none;
+}
+.cat-area:active { cursor:grabbing; }
+@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
+.wrap { animation:sway 4.5s ease-in-out infinite; transform-origin:center bottom; }
+.wrap.talking { animation:tsway 0.6s ease-in-out infinite; }
+@keyframes sway {
+  0%,100%{transform:rotate(0deg) translateY(0);}
+  30%{transform:rotate(3deg) translateY(-8px);} 70%{transform:rotate(-3deg) translateY(-6px);}
+}
+@keyframes tsway {
+  0%,100%{transform:rotate(0deg) translateY(0);}
+  33%{transform:rotate(4deg) translateY(-10px);} 66%{transform:rotate(-4deg) translateY(-8px);}
+}
 </style>
 </head>
 <body>
-<div id="container">
-  <div class="cat-area" id="cat-area" onclick="togglePanel()">
-    <div class="wrap" id="wrap">
-      <canvas id="cv" width="220" height="160"></canvas>
+
+<!-- ── 字幕テロップバー ── -->
+<div id="telop-bar">
+  <div id="telop-grip"></div>
+  <div id="telop-inner"></div>
+</div>
+
+<!-- ── チャットパネル ── -->
+<div id="panel">
+  <div id="panel-header">
+    <span class="title">◈ FF11 MIA</span>
+    <div id="mic-dot"></div>
+    <span id="panel-close" onclick="closePanel()">✕</span>
+  </div>
+  <div id="auto-close-bar"><div id="auto-close-progress"></div></div>
+  <div id="panel-tabs">
+    <button class="tab-btn active" onclick="switchTab('chat')">💬 チャット</button>
+    <button class="tab-btn"        onclick="switchTab('memo')">📝 メモ</button>
+  </div>
+  <div id="tab-chat" class="tab-content active">
+    <div id="chat-log"></div>
+    <div id="input-area">
+      <input id="text-input" type="text" placeholder="FF11について何でも...">
+      <div id="send-btn" onclick="sendText()">▶</div>
     </div>
   </div>
-  <div id="bubble"></div>
-  <div id="panel">
-    <div id="panel-header">
-      <span class="title">◈ FF11 MIPPI</span>
-      <div id="mic-dot"></div>
-      <span id="panel-close" onclick="closePanel()">✕</span>
-    </div>
-    <div id="chat-log" id="chat-log"></div>
-    <div id="input-area">
-      <input id="text-input" type="text" placeholder="FF11について何でも..." />
-      <div id="send-btn" onclick="sendText()">▶</div>
+  <div id="tab-memo" class="tab-content">
+    <textarea id="memo-area" placeholder="FF11メモをここに書いておこう…"></textarea>
+  </div>
+</div>
+
+<!-- ── ミアキャラクター ── -->
+<div id="container">
+  <div id="resize-handle"></div>
+  <div id="main-area">
+    <div class="cat-area" id="cat-area">
+      <div class="wrap" id="wrap">
+        <img id="mippi-img" src="/mia/11_yasumi.png" width="270" height="270" style="display:block;object-fit:contain;">
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════
-//  Canvas 猫（nana_live2d.html 完全流用）
-// ═══════════════════════════════════════════════
-const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
-const W=220,H=160,WHITE='#fafafa',PINK='#ffccd5',LINE='#555',CREAM='#f5f0e8';
-let faceMode='normal',mouthOpen=false,isTalking=false,talkInterval=null,faceTimer=null,tailPhase=0;
-const HX=54,HY=62,HR=36,EY=HY-5,ELX=HX-11,ERX=HX+8,ER=6,NY=HY+5,MY=HY+14,BX=122,BY=92,BRX=84,BRY=52;
-function draw(){ctx.clearRect(0,0,W,H);ctx.lineCap='round';ctx.lineJoin='round';drawBody();drawHead();drawEars();drawTail();drawFrontPaws();drawFaceExtras();drawEyes();drawNose();drawMouth();drawWhiskers();}
-function drawBody(){ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(BX,BY,BRX,BRY,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=CREAM;ctx.beginPath();ctx.ellipse(BX-8,BY+12,52,32,0,0,Math.PI*2);ctx.fill();}
-function drawHead(){ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(HX,HY,HR,0,Math.PI*2);ctx.fill();ctx.stroke();}
-function drawEars(){ctx.lineWidth=2;ctx.strokeStyle=LINE;ctx.fillStyle=WHITE;ctx.beginPath();ctx.moveTo(HX-17,HY-26);ctx.lineTo(HX-22,HY-46);ctx.lineTo(HX-6,HY-30);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(HX+2,HY-30);ctx.lineTo(HX+6,HY-48);ctx.lineTo(HX+16,HY-28);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle=PINK;ctx.strokeStyle='transparent';ctx.beginPath();ctx.moveTo(HX-16,HY-28);ctx.lineTo(HX-20,HY-43);ctx.lineTo(HX-8,HY-32);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(HX+3,HY-32);ctx.lineTo(HX+7,HY-44);ctx.lineTo(HX+14,HY-30);ctx.closePath();ctx.fill();ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(HX,HY,HR,0,Math.PI*2);ctx.fill();ctx.stroke();}
-function drawTail(){tailPhase+=isTalking?0.055:0.030;const swing=Math.sin(tailPhase)*16,bob=Math.sin(tailPhase*1.6+0.8)*6,rx=BX+BRX-6,ry=BY+16,tx=BX+BRX-42+swing,ty=BY+BRY+2+bob,c1x=BX+BRX+24,c1y=BY+46,c2x=BX+BRX-2+swing*0.45,c2y=BY+BRY+16;function bp(t){const u=1-t;return[u*u*u*rx+3*u*u*t*c1x+3*u*t*t*c2x+t*t*t*tx,u*u*u*ry+3*u*u*t*c1y+3*u*t*t*c2y+t*t*t*ty];}ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='rgba(80,60,40,0.13)';ctx.lineWidth=24;ctx.beginPath();ctx.moveTo(rx+2,ry+3);ctx.bezierCurveTo(c1x+2,c1y+3,c2x+2,c2y+3,tx+2,ty+4);ctx.stroke();for(let i=0;i<18;i++){const t0=i/18,t1=(i+1)/18,w=22*Math.pow(1-t0,0.6)+2,[x0,y0]=bp(t0),[x1,y1]=bp(t1);ctx.strokeStyle='#f8f7f4';ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();}ctx.strokeStyle=LINE;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(rx,ry);ctx.bezierCurveTo(c1x,c1y,c2x,c2y,tx,ty);ctx.stroke();ctx.restore();}
-function drawFrontPaws(){ctx.lineWidth=2.5;ctx.strokeStyle=LINE;ctx.fillStyle=WHITE;ctx.beginPath();ctx.ellipse(62,126,17,10,0.1,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.beginPath();ctx.ellipse(92,130,17,10,0.1,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=PINK;[62,92].forEach(px=>{ctx.beginPath();ctx.ellipse(px,128,5.5,4,0,0,Math.PI*2);ctx.fill();});}
-function drawFaceExtras(){if(faceMode==='shy'||faceMode==='tsukkomi'){ctx.fillStyle='rgba(255,150,150,0.35)';ctx.beginPath();ctx.ellipse(ELX-6,EY+8,10,6,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(ERX+6,EY+8,10,6,0,0,Math.PI*2);ctx.fill();}if(faceMode==='waku'){ctx.fillStyle='#ffd700';ctx.font='bold 11px sans-serif';ctx.fillText('✦',ELX-13,EY-6);ctx.fillText('✦',ERX+6,EY-6);}}
-function drawEyes(){const lx=ELX,rx=ERX,ey=EY,er=ER;ctx.strokeStyle=LINE;function ne(){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(lx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();}
-if(['normal','sweat','waku'].includes(faceMode)){ne();}else if(faceMode==='shy'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.ellipse(lx,ey,er,er*0.6,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey,er,er*0.6,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.ellipse(lx,ey,er*0.5,er*0.35,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey,er*0.5,er*0.35,0,0,Math.PI*2);ctx.fill();}else if(faceMode==='heart'){function h(hx,hy){const s=6;ctx.fillStyle='#ff4488';ctx.beginPath();ctx.moveTo(hx,hy+s*0.3);ctx.bezierCurveTo(hx,hy-s*0.5,hx-s*1.1,hy-s*0.5,hx-s*1.1,hy);ctx.bezierCurveTo(hx-s*1.1,hy+s*0.6,hx,hy+s*1.2,hx,hy+s*1.2);ctx.bezierCurveTo(hx,hy+s*1.2,hx+s*1.1,hy+s*0.6,hx+s*1.1,hy);ctx.bezierCurveTo(hx+s*1.1,hy-s*0.5,hx,hy-s*0.5,hx,hy+s*0.3);ctx.fill();}h(lx,ey);h(rx,ey);}else if(faceMode==='doya'||faceMode==='niyari'){ne();ctx.fillStyle=WHITE;ctx.fillRect(rx-er-1,ey-er-1,(er+1)*2,er+2);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();}else if(['blink','sleepy'].includes(faceMode)){ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(lx-er,ey);ctx.lineTo(lx+er,ey);ctx.stroke();ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();}else if(faceMode==='surprise'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.7,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er*0.7,0,Math.PI*2);ctx.fill();}else if(faceMode==='angry'||faceMode==='tsukkomi'){ctx.lineWidth=2.5;const hw=er+3;ctx.beginPath();ctx.moveTo(lx-hw,ey+hw*0.7);ctx.lineTo(lx+1,ey);ctx.lineTo(lx-hw,ey-hw*0.7);ctx.stroke();ctx.beginPath();ctx.moveTo(rx+hw,ey+hw*0.7);ctx.lineTo(rx-1,ey);ctx.lineTo(rx+hw,ey-hw*0.7);ctx.stroke();}else if(faceMode==='happy'){ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(lx,ey+3,er+1,Math.PI*1.1,Math.PI*1.9);ctx.stroke();ctx.beginPath();ctx.arc(rx,ey+3,er+1,Math.PI*1.1,Math.PI*1.9);ctx.stroke();}else if(faceMode==='cry'||faceMode==='worry'){ne();if(faceMode==='cry'){ctx.fillStyle='#80c0ff';ctx.beginPath();ctx.ellipse(lx,ey+er+3,2,5,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey+er+3,2,5,0,0,Math.PI*2);ctx.fill();}}else if(faceMode==='think'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(lx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(rx-er,ey-er-2);ctx.quadraticCurveTo(rx,ey-er-5,rx+er,ey-er-2);ctx.stroke();}else{ne();}}
-function drawNose(){ctx.fillStyle=PINK;ctx.beginPath();ctx.arc(HX,NY,3,0,Math.PI*2);ctx.fill();}
-function drawMouth(){ctx.lineWidth=2;ctx.strokeStyle=LINE;if(!mouthOpen){if(['angry','worry','cry','sleepy'].includes(faceMode)){ctx.beginPath();ctx.moveTo(HX-8,MY+3);ctx.quadraticCurveTo(HX,MY,HX+8,MY+3);ctx.stroke();}else if(['happy','waku','niyari'].includes(faceMode)){ctx.beginPath();ctx.moveTo(HX-8,MY-2);ctx.quadraticCurveTo(HX,MY+7,HX+8,MY-2);ctx.stroke();}else{ctx.beginPath();ctx.arc(HX-6,MY,4.5,0,Math.PI);ctx.stroke();ctx.beginPath();ctx.arc(HX+6,MY,4.5,0,Math.PI);ctx.stroke();ctx.beginPath();ctx.moveTo(HX-1.5,MY);ctx.lineTo(HX+1.5,MY);ctx.stroke();}}else{ctx.fillStyle='#c04040';ctx.beginPath();ctx.ellipse(HX,MY+3,9,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#e08080';ctx.beginPath();ctx.ellipse(HX,MY+6,5,3,0,0,Math.PI*2);ctx.fill();}}
-function drawWhiskers(){ctx.lineWidth=1.2;ctx.strokeStyle='#aaa';const wy=NY+2;[[-2,-3],[0,2],[-2,7]].forEach(([dx,dy])=>{ctx.beginPath();ctx.moveTo(HX-6,wy+dy*0.3);ctx.lineTo(HX-34+dx,wy+dy);ctx.stroke();});[[2,-3],[0,2],[2,7]].forEach(([dx,dy])=>{ctx.beginPath();ctx.moveTo(HX+6,wy+dy*0.3);ctx.lineTo(HX+30+dx,wy+dy);ctx.stroke();});}
-function setFace(m,d){faceMode=m;draw();if(faceTimer)clearTimeout(faceTimer);if(d)faceTimer=setTimeout(()=>{faceMode='normal';draw();},d);}
-function autoFace(t){
-  if(/危ない|あかん|なんでやねん|散開/.test(t))setFace('angry',2000);
-  else if(/調べ|検索|ちょっと待/.test(t))setFace('think',5000);
-  else if(/やった|最高|めっちゃ|すごい|ばっちり/.test(t))setFace('happy',2000);
-  else if(/悲し|泣|ひどい/.test(t))setFace('cry',2000);
-  else if(/好き|かわい|ゆっぴ/.test(t))setFace('heart',2000);
-  else if(/FF|ゲーム|装備|ジョブ|ハルシネ|リトレ/.test(t))setFace('waku',2000);
-  else if(/困|わから|むずか/.test(t))setFace('worry',2000);
-  else if(/なるほど|ドヤ/.test(t))setFace('doya',1500);}
-function startTalking(){if(isTalking)return;isTalking=true;wrap.classList.add('talking');talkInterval=setInterval(()=>{mouthOpen=!mouthOpen;draw();},200);}
-function stopTalking(){isTalking=false;clearInterval(talkInterval);mouthOpen=false;wrap.classList.remove('talking');draw();}
-function scheduleBlink(){setTimeout(()=>{if(faceMode==='normal'){faceMode='blink';draw();setTimeout(()=>{faceMode='normal';draw();scheduleBlink();},160);}else scheduleBlink();},Math.random()*4000+2500);}
-(function loop(){draw();requestAnimationFrame(loop);})();
-scheduleBlink();
+// ══════════════════════════════════════════════════
+//  スタンプ
+// ══════════════════════════════════════════════════
+const mippiImg = document.getElementById('mippi-img');
+const wrap     = document.getElementById('wrap');
+let stampTimer = null, isTalking = false;
 
-// ═══════════════════════════════════════════════
-//  UI（シンプル会話のみ）
-// ═══════════════════════════════════════════════
-const bubble   = document.getElementById('bubble');
-const panel    = document.getElementById('panel');
-const chatLog  = document.getElementById('chat-log');
-const textInput= document.getElementById('text-input');
-const micDot   = document.getElementById('mic-dot');
-let panelOpen  = false, bubbleTimer = null, panelTimer = null;
+const STAMPS = {
+  ohayou:'01_ohayou.png', yeah:'02_yeah.png', arigatou:'03_arigatou.png',
+  iine:'04_iine.png', gomen:'05_gomen.png', ganbaru:'06_ganbaru.png',
+  ikou:'07_ikou.png', nani:'08_nani.png', daisuki:'09_daisuki.png',
+  etto:'10_etto.png', yasumi:'11_yasumi.png', oyasumi:'12_oyasumi.png',
+  fight:'13_fight.png', doya:'14_doya.png', yay:'15_yay.png', matane:'16_matane.png'
+};
 
-// 日本語読速 約600字/分 → 1文字 ≒ 100ms。最短8秒・最長90秒
-function calcReadMs(text){ return Math.max(8000, Math.min(90000, (text||'').length * 100)); }
-
-// テロップ（返答を吹き出しで表示・パネルと独立）
-function showTelop(text){
-  bubble.textContent = text;
-  bubble.classList.add('show');
-  if(bubbleTimer) clearTimeout(bubbleTimer);
-  bubbleTimer = setTimeout(()=>bubble.classList.remove('show'), calcReadMs(text));
+function setStamp(key, duration) {
+  mippiImg.src = '/mia/' + (STAMPS[key] || STAMPS.yasumi);
+  if (stampTimer) clearTimeout(stampTimer);
+  if (duration) stampTimer = setTimeout(()=>{ mippiImg.src='/mia/'+STAMPS.yasumi; }, duration);
 }
 
-// パネルはユーザー操作のみ・自動開閉なし
+function autoStamp(t) {
+  if (/おはよう|こんにちは|はじめまして|よろしく|いらっしゃ/.test(t)) setStamp('ohayou', 2500);
+  else if (/さようなら|またね|バイバイ|またあした|またきて/.test(t)) setStamp('matane', 3000);
+  else if (/おやすみ/.test(t)) setStamp('oyasumi', 3000);
+  else if (/危ない|えっ|びっくり|散開|マジ！|うそ！|まじか|嘘で/.test(t)) setStamp('etto', 2000);
+  else if (/調べ|検索|ちょっと待|確認|なんだっけ|忘れ|うーん|わからん|どうだっけ/.test(t)) setStamp('nani', 4000);
+  else if (/やった|最高|やばい|すごい|ばっちり|わーい|できた|完璧|クリア|勝っ/.test(t)) setStamp('yay', 2500);
+  else if (/いえーい|ヤッホー|テンション|ノリノリ/.test(t)) setStamp('yeah', 2000);
+  else if (/ごめん|すまな|申し訳|ごめんね|失敗/.test(t)) setStamp('gomen', 2500);
+  else if (/ありがと|感謝|助かっ/.test(t)) setStamp('arigatou', 2500);
+  else if (/好き|かわい|だいすき|ゆっぴ|愛し/.test(t)) setStamp('daisuki', 2500);
+  else if (/なるほど|ドヤ|正解|さすが|ぴったり|その通り/.test(t)) setStamp('doya', 2000);
+  else if (/頑張|ファイト|いける|諦めないで|応援|一緒に戦/.test(t)) setStamp('fight', 2500);
+  else if (/がんばる|やる気|モチベ|全力/.test(t)) setStamp('ganbaru', 2500);
+  else if (/行こ|レッツゴー|いっしょに冒険|出発|次は/.test(t)) setStamp('ikou', 2000);
+  else if (/装備|ジョブ|PT|パーティ|強い|おすすめ|いいよ|使え/.test(t)) setStamp('iine', 2000);
+  else if (/ちょっと|少し待|ロード|読み込み|処理中/.test(t)) setStamp('yasumi', 3000);
+  else if (/配信終わり|ログアウト|落ちる|終わり|閉じ/.test(t)) setStamp('oyasumi', 3000);
+}
+
+function startTalking() {
+  if (isTalking) return;
+  isTalking = true; wrap.classList.add('talking'); setStamp('nani');
+}
+function stopTalking() {
+  isTalking = false; wrap.classList.remove('talking'); setStamp('yasumi');
+}
+
+// ══════════════════════════════════════════════════
+//  字幕テロップ（１文ずつ）
+// ══════════════════════════════════════════════════
+const telopBar   = document.getElementById('telop-bar');
+const telopInner = document.getElementById('telop-inner');
+let sentTimer = null, telopHideTimer = null;
+
+function splitSentences(text){
+  return text.replace(/([。！？\n])/g, '$1\x00').split('\x00')
+             .map(s=>s.trim()).filter(s=>s.length>0);
+}
+
+function showTelop(text){
+  const sents = splitSentences(text);
+  if(!sents.length) return;
+  if(sentTimer)     clearTimeout(sentTimer);
+  if(telopHideTimer)clearTimeout(telopHideTimer);
+  telopBar.classList.add('show');
+  let idx = 0;
+  function next(){
+    if(idx >= sents.length){
+      telopHideTimer = setTimeout(()=>telopBar.classList.remove('show'), 2000);
+      return;
+    }
+    const s = sents[idx++];
+    telopInner.classList.add('fade');
+    setTimeout(()=>{
+      telopInner.textContent = s;
+      telopInner.classList.remove('fade');
+      sentTimer = setTimeout(next, Math.max(2500, s.length * 130));
+    }, 260);
+  }
+  next();
+}
+
+// ══════════════════════════════════════════════════
+//  チャットパネル
+// ══════════════════════════════════════════════════
+const panel      = document.getElementById('panel');
+const chatLog    = document.getElementById('chat-log');
+const textInput  = document.getElementById('text-input');
+const micDot     = document.getElementById('mic-dot');
+const acProgress = document.getElementById('auto-close-progress');
+const memoArea   = document.getElementById('memo-area');
+let panelOpen = false, acTimer = null;
+const AC_MS = 20000;
+
+// メモ保存/復元
+memoArea.value = localStorage.getItem('mia_memo') || '';
+memoArea.addEventListener('input', ()=>localStorage.setItem('mia_memo', memoArea.value));
+
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active', (['chat','memo'])[i]===name));
+  document.getElementById('tab-chat').classList.toggle('active', name==='chat');
+  document.getElementById('tab-memo').classList.toggle('active', name==='memo');
+}
+
+function acBarStart(){
+  acProgress.style.transition='none'; acProgress.style.transform='scaleX(1)';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    acProgress.style.transition=`transform ${AC_MS}ms linear`;
+    acProgress.style.transform='scaleX(0)';
+  }));
+}
+function acBarStop(){
+  acProgress.style.transition='none'; acProgress.style.transform='scaleX(1)';
+}
+
 function openPanel(){
-  panelOpen = true; panel.classList.add('open');
-  if(window._desktopMode && window.pywebview?.api?.resize) pywebview.api.resize(300,520);
+  panelOpen=true; panel.classList.add('open'); resetAC();
 }
 function closePanel(){
-  panelOpen = false; panel.classList.remove('open');
-  if(window._desktopMode && window.pywebview?.api?.resize) pywebview.api.resize(300,280);
+  panelOpen=false; panel.classList.remove('open');
+  if(acTimer){clearTimeout(acTimer); acTimer=null;} acBarStop();
 }
 function togglePanel(){ panelOpen ? closePanel() : openPanel(); }
 
+function resetAC(){
+  if(acTimer){clearTimeout(acTimer); acTimer=null;}
+  if(!panelOpen) return;
+  acBarStart();
+  acTimer = setTimeout(closePanel, AC_MS);
+}
+
+textInput.addEventListener('input', ()=>{ if(panelOpen) resetAC(); });
+panel.addEventListener('mouseenter', ()=>{ if(panelOpen){clearTimeout(acTimer); acBarStop();} });
+panel.addEventListener('mouseleave', ()=>{ if(panelOpen) resetAC(); });
+
 function addMsg(role, text){
   const d = document.createElement('div');
-  d.className = role === 'user' ? 'msg-user' : ('msg-mippi' + (text.includes('\n') ? ' diagram' : ''));
+  d.className = role==='user' ? 'msg-user' : ('msg-mippi'+(text.includes('\n')?' diagram':''));
   d.textContent = text;
   chatLog.appendChild(d);
-  if(chatLog.children.length > 60) chatLog.removeChild(chatLog.firstChild);
+  if(chatLog.children.length>60) chatLog.removeChild(chatLog.firstChild);
   chatLog.scrollTop = chatLog.scrollHeight;
+  if(!panelOpen) openPanel(); else resetAC();
 }
 
 function sendText(){
-  const text = textInput.value.trim();
-  if(!text) return;
-  if(!ws || ws.readyState !== WebSocket.OPEN){
-    showTelop('サーバーに繋がってないで！012_start.bat を起動してな。');
-    return;
+  const text = textInput.value.trim(); if(!text) return;
+  if(!ws || ws.readyState!==WebSocket.OPEN){
+    showTelop('サーバーに繋がってないで！012_start.bat を起動してな。'); return;
   }
   ws.send(JSON.stringify({cmd:'user_text', text}));
-  textInput.value = '';
+  textInput.value=''; resetAC();
 }
 textInput.addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendText(); }
 });
 
-// ═══════════════════════════════════════════════
+// ══════════════════════════════════════════════════
 //  WebSocket
-// ═══════════════════════════════════════════════
-let ws = null;
+// ══════════════════════════════════════════════════
+let ws=null;
 function connectWS(){
   ws = new WebSocket('ws://127.0.0.1:9012');
-  ws.onopen  = ()=>{ micDot.classList.add('active'); };
+  ws.onopen  = ()=>micDot.classList.add('active');
   ws.onclose = ()=>{ micDot.classList.remove('active','recording'); setTimeout(connectWS,3000); };
   ws.onerror = ()=>{};
   ws.onmessage = e=>{ try{ handleCmd(JSON.parse(e.data)); }catch{} };
@@ -214,30 +429,116 @@ function handleCmd(d){
   if(!d?.cmd) return;
   switch(d.cmd){
     case 'talkStart': startTalking(); break;
-    case 'talkStop':  stopTalking(); setFace('normal'); break;
-    case 'setFace':   setFace(d.face, d.duration||2500); break;
-    case 'autoFace':  autoFace(d.text||''); break;
-    case 'user_msg':
-      addMsg('user', d.text||''); break;  // パネルは自動で開かない
+    case 'talkStop':  stopTalking(); break;
+    case 'setStamp':  setStamp(d.key, d.duration||2500); break;
+    case 'user_msg':  addMsg('user', d.text||''); break;
     case 'reply':
-      if(d.text){
-        addMsg('mippi', d.text);
-        showTelop(d.text);  // 常にテロップで表示（パネル開閉なし）
-      }
+      if(d.text){ addMsg('mippi',d.text); showTelop(d.text);
+        if(d.emotion) setStamp(d.emotion,3000); else autoStamp(d.text); }
       break;
   }
 }
 connectWS();
 
-// デスクトップモード（PyWebView）ドラッグ移動
+// ══════════════════════════════════════════════════
+//  汎用ドラッグ・ズームユーティリティ
+// ══════════════════════════════════════════════════
+function makeDraggable(elem, handle, lsKey, defaultPos){
+  const sx = parseFloat(localStorage.getItem(lsKey+'_x') ?? defaultPos.x);
+  const sy = parseFloat(localStorage.getItem(lsKey+'_y') ?? defaultPos.y);
+  elem.style.left = sx+'px'; elem.style.top = sy+'px';
+
+  let drag=false, lx=0, ly=0;
+  handle.addEventListener('mousedown', e=>{
+    if(e.target.closest('#panel-close, #send-btn, .tab-btn, #text-input, #memo-area')) return;
+    drag=true; lx=e.clientX; ly=e.clientY;
+    elem.style.transition='none'; e.preventDefault();
+  });
+  document.addEventListener('mousemove', e=>{
+    if(!drag) return;
+    const nx=elem.offsetLeft+(e.clientX-lx);
+    const ny=elem.offsetTop +(e.clientY-ly);
+    lx=e.clientX; ly=e.clientY;
+    elem.style.left=nx+'px'; elem.style.top=ny+'px';
+    localStorage.setItem(lsKey+'_x', nx); localStorage.setItem(lsKey+'_y', ny);
+  });
+  document.addEventListener('mouseup', ()=>{ drag=false; });
+}
+
+function makeZoomable(elem, lsKey, origin){
+  let scale = parseFloat(localStorage.getItem(lsKey+'_z') ?? '1');
+  elem.style.transformOrigin = origin;
+  function apply(){ elem.style.transform=`scale(${scale})`; }
+  apply();
+  elem.addEventListener('wheel', e=>{
+    e.preventDefault();
+    scale = Math.min(3, Math.max(0.3, scale+(e.deltaY<0?0.05:-0.05)));
+    apply(); localStorage.setItem(lsKey+'_z', scale);
+  }, {passive:false});
+}
+
+// ── テロップ ─────────────────────────────────────
+const telopW = window.innerWidth * 0.76;
+makeDraggable(telopBar, document.getElementById('telop-grip'), 'telop', {
+  x: (window.innerWidth - telopW)/2, y: window.innerHeight - 90
+});
+makeZoomable(telopBar, 'telop', 'top center');
+
+// ── チャットパネル ────────────────────────────────
+makeDraggable(panel, document.getElementById('panel-header'), 'panel', {
+  x: 12, y: 60
+});
+makeZoomable(panel, 'panel', 'top left');
+
+// ══════════════════════════════════════════════════
+//  ミア — ドラッグ(デスクトップ窓移動) + ズーム + クリックでパネル
+// ══════════════════════════════════════════════════
 window._desktopMode = false;
-(function setupDrag(){
-  const area = document.getElementById('cat-area');
-  let dragging=false, lx=0, ly=0;
-  area.addEventListener('mousedown', e=>{ if(!window._desktopMode)return; dragging=true; lx=e.screenX; ly=e.screenY; e.preventDefault(); });
-  document.addEventListener('mousemove', e=>{ if(!dragging)return; const dx=e.screenX-lx, dy=e.screenY-ly; lx=e.screenX; ly=e.screenY; if(window.pywebview?.api?.move_delta) pywebview.api.move_delta(dx,dy); });
-  document.addEventListener('mouseup', ()=>{ dragging=false; });
-})();
+const container    = document.getElementById('container');
+const catArea      = document.getElementById('cat-area');
+const mainArea     = document.getElementById('main-area');
+const resizeHandle = document.getElementById('resize-handle');
+
+makeZoomable(mainArea, 'mia', 'bottom center');
+
+// ドラッグ vs クリック判定
+let miaDragDist=0, miaDragLX=0, miaDragLY=0, miaDragging=false;
+
+catArea.addEventListener('mousedown', e=>{
+  miaDragging=true; miaDragDist=0; miaDragLX=e.screenX; miaDragLY=e.screenY;
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e=>{
+  if(!miaDragging) return;
+  const dx=e.screenX-miaDragLX, dy=e.screenY-miaDragLY;
+  miaDragDist += Math.hypot(dx, dy);
+  miaDragLX=e.screenX; miaDragLY=e.screenY;
+  if(miaDragDist>4 && window._desktopMode && window.pywebview?.api?.move_delta)
+    pywebview.api.move_delta(dx, dy);
+});
+document.addEventListener('mouseup', e=>{
+  if(!miaDragging) return;
+  miaDragging=false;
+  if(miaDragDist <= 4) togglePanel();
+});
+
+// リサイズハンドル（コンテナ幅）
+let resizing=false, rStartX=0, rStartW=0;
+const MIN_W=200, MAX_W=500;
+container.style.width = (parseInt(localStorage.getItem('mia_w')||'280'))+'px';
+resizeHandle.addEventListener('mousedown', e=>{
+  resizing=true; rStartX=e.clientX; rStartW=container.offsetWidth;
+  document.body.style.cursor='ew-resize'; e.preventDefault(); e.stopPropagation();
+});
+document.addEventListener('mousemove', e=>{
+  if(!resizing) return;
+  container.style.width=Math.min(MAX_W,Math.max(MIN_W,rStartW+(rStartX-e.clientX)))+'px';
+});
+document.addEventListener('mouseup', ()=>{
+  if(!resizing) return;
+  resizing=false; document.body.style.cursor='';
+  localStorage.setItem('mia_w', container.offsetWidth);
+});
 </script>
 </body>
 </html>

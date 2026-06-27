@@ -14,8 +14,8 @@ except ImportError:
     print("pywebview が必要です: pip install pywebview")
     sys.exit(1)
 
-WIN_W  = 300
-WIN_H  = 460
+WIN_W  = 560
+WIN_H  = 520
 SERVER = Path(__file__).parent / "012_server.py"
 
 # ── スクリーン右下に配置 ──────────────────────────────────────────────────────
@@ -93,34 +93,41 @@ def main():
 
     x, y   = screen_bottom_right()
     window = webview.create_window(
-        title       = "",
-        url         = "http://127.0.0.1:8012/",
-        x           = x,
-        y           = y,
-        width       = WIN_W,
-        height      = WIN_H,
-        transparent = True,
-        frameless   = True,
-        on_top      = True,
-        min_size    = (200, 200),
+        title            = "",
+        url              = "http://127.0.0.1:8012/",
+        x                = x,
+        y                = y,
+        width            = WIN_W,
+        height           = WIN_H,
+        transparent      = True,
+        frameless        = True,
+        on_top           = True,
+        min_size         = (160, 160),
+        background_color = "#00000000",
     )
 
-    # pywebview 6.x: 関数を直接 expose する
-    win_pos = [x, y]
+    win_pos  = [x, y]
+    win_size = [WIN_W, WIN_H]
 
     def move_delta(dx, dy):
         win_pos[0] = max(0, win_pos[0] + int(dx))
         win_pos[1] = max(0, win_pos[1] + int(dy))
         window.move(win_pos[0], win_pos[1])
 
-    def resize(w, h):
-        window.resize(int(w), int(h))
+    def set_size(w, h):
+        win_size[0] = max(160, int(w))
+        win_size[1] = max(160, int(h))
+        window.resize(win_size[0], win_size[1])
 
     def on_loaded():
-        window.evaluate_js("window._desktopMode = true;")
+        window.evaluate_js(
+            "window._desktopMode = true;"
+            "document.documentElement.style.background='transparent';"
+            "document.body.style.background='transparent';"
+        )
 
     window.events.loaded += on_loaded
-    window.expose(move_delta, resize)
+    window.expose(move_delta, set_size)
 
     webview.start(debug=False)
 
