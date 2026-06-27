@@ -160,6 +160,22 @@ html, body {
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
 }
 #send-btn:hover { background:rgba(200,150,42,0.4); }
+#mic-btn {
+  width:28px; height:28px; background:rgba(200,150,42,0.15);
+  border:1.5px solid #c8962a; border-radius:50%;
+  color:#8a6010; font-size:13px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  user-select:none; -webkit-user-select:none; transition:background 0.15s;
+}
+#mic-btn:hover { background:rgba(200,150,42,0.35); }
+#mic-btn.recording {
+  background:rgba(224,64,64,0.85); border-color:#e04040;
+  color:#fff; box-shadow:0 0 7px rgba(224,64,64,0.7);
+  animation:mpulse 0.6s infinite;
+}
+#mic-btn.processing {
+  background:rgba(200,150,42,0.5); animation:mpulse 0.7s infinite;
+}
 
 /* メモタブ */
 #memo-area {
@@ -234,6 +250,7 @@ html, body {
     <div id="chat-log"></div>
     <div id="input-area">
       <input id="text-input" type="text" placeholder="FF11について何でも...">
+      <div id="mic-btn" title="押して話す（プッシュトゥトーク）">🎤</div>
       <div id="send-btn" onclick="sendText()">▶</div>
     </div>
   </div>
@@ -345,6 +362,7 @@ function showTelop(text){
 const panel      = document.getElementById('panel');
 const chatLog    = document.getElementById('chat-log');
 const textInput  = document.getElementById('text-input');
+const micBtn     = document.getElementById('mic-btn');
 const micDot     = document.getElementById('mic-dot');
 const acProgress = document.getElementById('auto-close-progress');
 const memoArea   = document.getElementById('memo-area');
@@ -414,6 +432,28 @@ textInput.addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendText(); }
 });
 
+// ── プッシュトゥトーク ────────────────────────────────────────
+let micActive = false;
+function micSetState(state){
+  micBtn.classList.remove('recording','processing');
+  micDot.classList.remove('recording');
+  if(state==='recording'){ micBtn.classList.add('recording'); micDot.classList.add('recording'); }
+  if(state==='processing'){ micBtn.classList.add('processing'); }
+}
+micBtn.addEventListener('mousedown', e=>{
+  e.preventDefault();
+  if(!ws || ws.readyState!==WebSocket.OPEN) return;
+  micActive = true;
+  micSetState('recording');
+  ws.send(JSON.stringify({cmd:'mic_start'}));
+});
+document.addEventListener('mouseup', ()=>{
+  if(!micActive) return;
+  micActive = false;
+  if(!ws || ws.readyState!==WebSocket.OPEN){ micSetState('idle'); return; }
+  ws.send(JSON.stringify({cmd:'mic_stop'}));
+});
+
 // ══════════════════════════════════════════════════
 //  WebSocket
 // ══════════════════════════════════════════════════
@@ -436,6 +476,17 @@ function handleCmd(d){
       if(d.text){ addMsg('mippi',d.text); showTelop(d.text);
         if(d.emotion) setStamp(d.emotion,3000); else autoStamp(d.text); }
       break;
+    case 'mic_state':
+      micSetState(d.state||'idle');
+      break;
+    case 'mic_transcribed':
+      micSetState('idle');
+      if(d.text){
+        textInput.value = d.text;
+        textInput.style.color = '#c8962a';
+        setTimeout(()=>{ textInput.value=''; textInput.style.color=''; }, 2000);
+      }
+      break;
   }
 }
 connectWS();
@@ -450,7 +501,7 @@ function makeDraggable(elem, handle, lsKey, defaultPos){
 
   let drag=false, lx=0, ly=0;
   handle.addEventListener('mousedown', e=>{
-    if(e.target.closest('#panel-close, #send-btn, .tab-btn, #text-input, #memo-area')) return;
+    if(e.target.closest('#panel-close, #send-btn, #mic-btn, .tab-btn, #text-input, #memo-area')) return;
     drag=true; lx=e.clientX; ly=e.clientY;
     elem.style.transition='none'; e.preventDefault();
   });

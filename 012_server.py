@@ -107,7 +107,14 @@ try:
 except ImportError:
     pyaudio = None
     PYAUDIO_OK = False
-    print("[MIC] pyaudio なし → マイク入力無効（VOICE_THRESHOLD=99999 で継続）")
+
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_OK = True
+except ImportError:
+    sd = None
+    SOUNDDEVICE_OK = False
+    print("[MIC] sounddevice なし → プッシュトゥトーク無効")
 
 try:
     import anthropic
@@ -409,6 +416,11 @@ class FF11System:
         self.interrupt_req   = False
         self._use_voicevox   = False
         self.running         = True
+        # sounddevice プッシュトゥトーク
+        self._sd_frames: list = []
+        self._sd_stream       = None
+        self._sd_lock         = threading.Lock()
+        self._sd_rate: int    = SAMPLE_RATE
 
     # ──────────────────────────────────────────────────────────────
     #  初期化
@@ -701,6 +713,24 @@ class FF11System:
                                 ensure_ascii=False))
                         elif cmd == "interrupt":
                             self.interrupt_req = True
+                        elif cmd == "mic_start":
+                            self._sd_mic_start()
+                            await self.browser_send({"cmd": "mic_state", "state": "recording"})
+                        elif cmd == "mic_stop":
+                            audio = self._sd_mic_stop()
+                            await self.browser_send({"cmd": "mic_state", "state": "processing"})
+                            if audio is not None and len(audio) > SAMPLE_RATE * 0.3:
+                                loop = asyncio.get_event_loop()
+                                text = await loop.run_in_executor(None, self.transcribe, audio)
+                                if text:
+                                    print(f"[MIC] 音声認識: 「{text}」")
+                                    await self.browser_send({"cmd": "mic_transcribed", "text": text})
+                                    self._text_input_q.put(text)
+                                else:
+                                    print("[MIC] 音声認識: テキストなし")
+                                    await self.browser_send({"cmd": "mic_state", "state": "idle"})
+                            else:
+                                await self.browser_send({"cmd": "mic_state", "state": "idle"})
                     except Exception:
                         pass
             except Exception:
@@ -779,6 +809,58 @@ class FF11System:
         print("[MIC] → MIC_SEARCH_KEYWORD を上記の名前に合わせてください")
         print(f"[MIC] デフォルトデバイスで続行します")
         return None, SAMPLE_RATE
+
+    # ──────────────────────────────────────────────────────────────
+    #  sounddevice プッシュトゥトーク
+    # ──────────────────────────────────────────────────────────────
+
+    def _sd_mic_start(self):
+        if not SOUNDDEVICE_OK:
+            print("[MIC] sounddevice なし → スキップ")
+            return
+        try:
+            with self._sd_lock:
+                self._sd_frames = []
+            # デバイスのネイティブレートを使用（後でリサンプル）
+            dev_info = sd.query_devices(sd.default.device[0])
+            native_rate = int(dev_info['default_samplerate'])
+            self._sd_rate = native_rate
+            def _cb(indata, frames_count, time_info, status):
+                with self._sd_lock:
+                    self._sd_frames.append(indata.copy())
+            self._sd_stream = sd.InputStream(
+                samplerate=native_rate, channels=1, dtype='float32',
+                callback=_cb, blocksize=CHUNK_SIZE
+            )
+            self._sd_stream.start()
+            print(f"[MIC] 録音開始 ({native_rate}Hz)")
+        except Exception as e:
+            print(f"[MIC] 録音開始エラー: {e}")
+
+    def _sd_mic_stop(self) -> "np.ndarray | None":
+        if not SOUNDDEVICE_OK or self._sd_stream is None:
+            return None
+        try:
+            self._sd_stream.stop()
+            self._sd_stream.close()
+            self._sd_stream = None
+            with self._sd_lock:
+                frames = list(self._sd_frames)
+                self._sd_frames = []
+            if not frames:
+                return None
+            audio = np.concatenate(frames, axis=0).flatten()
+            if self._sd_rate != SAMPLE_RATE:
+                audio = self._resample(
+                    (audio * 32768).astype(np.int16),
+                    self._sd_rate, SAMPLE_RATE
+                ).astype(np.float32) / 32768.0
+            dur = len(audio) / SAMPLE_RATE
+            print(f"[MIC] 録音停止 ({dur:.1f}s)")
+            return audio
+        except Exception as e:
+            print(f"[MIC] 録音停止エラー: {e}")
+            return None
 
     @staticmethod
     def _resample(pcm: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
