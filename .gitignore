@@ -24,6 +24,8 @@ api_cost.json
 012_knowledge.json
 startup_out.txt
 startup_err.txt
+start_out.txt
+start_err.txt
 startup_now.log
 tom_log.txt
 diary/
@@ -45,6 +47,11 @@ __pycache__/
 *.wav
 *.mp3
 *.tmp
+
+# ── バックアップ・作業ファイル ──────────────────────
+mia_backup/
+mia_backup2/
+*.zip
 
 # ── 古いバージョン ──────────────────────────────────
 012-ff11-assistant/
