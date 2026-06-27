@@ -1,0 +1,28 @@
+# 012号 FF11アシスタントくん みっぴ — 依存ライブラリ
+# pip install -r 012_requirements.txt
+
+# Claude API + 音声認識
+anthropic>=0.40.0
+faster-whisper>=1.0.0
+
+# TTS（音声合成）
+edge-tts>=6.1.0
+pygame>=2.5.0
+
+# マイク入力
+pyaudio>=0.2.14
+
+# WebSocket サーバー（ブラウザとの通信）
+websockets>=12.0
+
+# 検索
+ddgs>=1.0.0
+
+# デスクトップキャラクター表示
+pywebview==5.3.2
+
+# HTTP リクエスト（AivisSpeech / VOICEVOX）
+requests>=2.31.0
+
+# 環境変数
+python-dotenv>=1.0.0

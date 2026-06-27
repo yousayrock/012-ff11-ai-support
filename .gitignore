@@ -1,0 +1,51 @@
+# ── 個人情報・秘密情報 ──────────────────────────────
+.env
+*.key
+vts_token.txt
+
+# ── 003号（みっぴ配信AI）のファイル ────────────────
+mippi_main.py
+mippi_main_backup_*.py
+mippi_remote_qr.png
+start_mippi.bat
+nana_live2d.html
+telop.html
+comment_widget.html
+cost_widget.html
+navi_hud.html
+README.md
+ROADMAP.md
+OBS設定説明書.md
+みっぴ取扱説明書.md
+requirements.txt
+api_cost.json
+
+# ── 個人データ・ログ ────────────────────────────────
+012_log.txt
+012_knowledge.json
+startup_out.txt
+startup_err.txt
+startup_now.log
+tom_log.txt
+diary/
+logs/
+cost_history/
+memo.txt
+memory.txt
+ideas.txt
+kakasi_test.txt
+CLAUDE_HANDOFF.md
+
+# ── Claude Code 設定（プロジェクト固有）───────────────
+.claude/
+
+# ── 一時ファイル ────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.wav
+*.mp3
+*.tmp
+
+# ── 古いバージョン ──────────────────────────────────
+012-ff11-assistant/

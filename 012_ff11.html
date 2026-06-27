@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>012 FF11 みっぴ</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { background:transparent; width:100%; height:100%; overflow:hidden;
+  font-family:'Meiryo','Yu Gothic UI','Noto Sans JP',sans-serif; }
+
+#container { position:fixed; bottom:12px; right:12px; width:280px;
+  display:flex; flex-direction:column; align-items:center; }
+
+/* ── キャラ浮遊 ── */
+.cat-area { width:220px; display:flex; flex-direction:column; align-items:center;
+  animation:float 5s ease-in-out infinite; cursor:pointer; user-select:none; }
+@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-14px);} }
+.wrap { animation:sway 4.5s ease-in-out infinite; transform-origin:center bottom; }
+.wrap.talking { animation:tsway 0.5s ease-in-out infinite; }
+@keyframes sway { 0%,100%{transform:rotate(0deg) translateY(0);}
+  30%{transform:rotate(5deg) translateY(-12px);} 70%{transform:rotate(-4deg) translateY(-9px);} }
+@keyframes tsway { 0%,100%{transform:rotate(0deg) translateY(0);}
+  33%{transform:rotate(6deg) translateY(-14px);} 66%{transform:rotate(-5deg) translateY(-11px);} }
+
+/* ── テロップ（返答表示・常時） ── */
+#bubble { position:relative; width:260px; max-height:180px; overflow-y:auto;
+  padding:10px 14px; background:rgba(6,8,18,0.92);
+  border:1px solid rgba(0,245,255,0.22); border-radius:12px;
+  color:#dde8f0; font-size:12px; line-height:1.7; word-break:break-all;
+  opacity:0; transform:translateY(4px);
+  transition:opacity 0.2s, transform 0.2s; margin-top:-6px;
+  white-space:pre-wrap; }
+#bubble.show { opacity:1; transform:translateY(0); }
+#bubble::after { content:''; position:absolute; top:-8px; right:44px;
+  border:8px solid transparent; border-bottom:8px solid rgba(6,8,18,0.92); }
+#bubble::-webkit-scrollbar { width:3px; }
+#bubble::-webkit-scrollbar-thumb { background:rgba(0,245,255,0.2); border-radius:2px; }
+
+/* ── パネル（長い返答・会話ログ） ── */
+#panel { width:280px; background:rgba(6,9,18,0.93);
+  border:1px solid rgba(0,245,255,0.18); border-radius:10px;
+  overflow:hidden; max-height:0; opacity:0;
+  transition:max-height 0.3s ease, opacity 0.3s ease; margin-top:4px; }
+#panel.open { max-height:380px; opacity:1; }
+
+#panel-header { display:flex; align-items:center; gap:6px;
+  padding:6px 10px; border-bottom:1px solid rgba(0,245,255,0.1); }
+#panel-header .title { font-size:10px; color:rgba(0,245,255,0.6); letter-spacing:1px; }
+#mic-dot { width:6px; height:6px; background:rgba(255,255,255,0.2);
+  border-radius:50%; transition:background 0.2s; }
+#mic-dot.active  { background:#00f5ff; box-shadow:0 0 5px rgba(0,245,255,0.6); }
+#mic-dot.recording { background:#ff4060; animation:mpulse 0.6s infinite; }
+@keyframes mpulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
+#panel-close { margin-left:auto; font-size:10px; color:rgba(255,255,255,0.3); cursor:pointer; }
+
+/* 会話ログ */
+#chat-log { height:200px; overflow-y:auto; padding:8px 10px;
+  display:flex; flex-direction:column; gap:6px; }
+#chat-log::-webkit-scrollbar { width:3px; }
+#chat-log::-webkit-scrollbar-thumb { background:rgba(0,245,255,0.2); border-radius:2px; }
+
+.msg-user { align-self:flex-end; max-width:85%;
+  background:rgba(0,120,160,0.25); border:1px solid rgba(0,180,220,0.2);
+  border-radius:8px 8px 0 8px; padding:5px 10px;
+  font-size:11px; color:#9ac8e0; white-space:pre-wrap; word-break:break-all; }
+.msg-mippi { align-self:flex-start; max-width:92%;
+  background:rgba(20,26,40,0.7); border:1px solid rgba(0,245,255,0.12);
+  border-radius:8px 8px 8px 0; padding:6px 10px;
+  font-size:11px; color:#c8d8e8; white-space:pre-wrap; word-break:break-all;
+  line-height:1.7; }
+.msg-mippi.diagram { font-family:'Consolas','Courier New',monospace; font-size:10px; }
+
+/* 入力エリア */
+#input-area { display:flex; gap:5px; padding:6px 8px;
+  border-top:1px solid rgba(0,245,255,0.1); align-items:center; }
+#text-input { flex:1; background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.1); border-radius:16px;
+  padding:5px 10px; font-size:11px; color:#c0d0e0;
+  font-family:inherit; outline:none; }
+#text-input:focus { border-color:rgba(0,245,255,0.4); }
+#text-input::placeholder { color:rgba(255,255,255,0.2); }
+#send-btn { width:26px; height:26px; background:rgba(0,245,255,0.1);
+  border:1px solid rgba(0,245,255,0.3); border-radius:50%;
+  color:rgba(0,245,255,0.8); font-size:11px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+#send-btn:hover { background:rgba(0,245,255,0.2); }
+</style>
+</head>
+<body>
+<div id="container">
+  <div class="cat-area" id="cat-area" onclick="togglePanel()">
+    <div class="wrap" id="wrap">
+      <canvas id="cv" width="220" height="160"></canvas>
+    </div>
+  </div>
+  <div id="bubble"></div>
+  <div id="panel">
+    <div id="panel-header">
+      <span class="title">◈ FF11 MIPPI</span>
+      <div id="mic-dot"></div>
+      <span id="panel-close" onclick="closePanel()">✕</span>
+    </div>
+    <div id="chat-log" id="chat-log"></div>
+    <div id="input-area">
+      <input id="text-input" type="text" placeholder="FF11について何でも..." />
+      <div id="send-btn" onclick="sendText()">▶</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  Canvas 猫（nana_live2d.html 完全流用）
+// ═══════════════════════════════════════════════
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
+const W=220,H=160,WHITE='#fafafa',PINK='#ffccd5',LINE='#555',CREAM='#f5f0e8';
+let faceMode='normal',mouthOpen=false,isTalking=false,talkInterval=null,faceTimer=null,tailPhase=0;
+const HX=54,HY=62,HR=36,EY=HY-5,ELX=HX-11,ERX=HX+8,ER=6,NY=HY+5,MY=HY+14,BX=122,BY=92,BRX=84,BRY=52;
+function draw(){ctx.clearRect(0,0,W,H);ctx.lineCap='round';ctx.lineJoin='round';drawBody();drawHead();drawEars();drawTail();drawFrontPaws();drawFaceExtras();drawEyes();drawNose();drawMouth();drawWhiskers();}
+function drawBody(){ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(BX,BY,BRX,BRY,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=CREAM;ctx.beginPath();ctx.ellipse(BX-8,BY+12,52,32,0,0,Math.PI*2);ctx.fill();}
+function drawHead(){ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(HX,HY,HR,0,Math.PI*2);ctx.fill();ctx.stroke();}
+function drawEars(){ctx.lineWidth=2;ctx.strokeStyle=LINE;ctx.fillStyle=WHITE;ctx.beginPath();ctx.moveTo(HX-17,HY-26);ctx.lineTo(HX-22,HY-46);ctx.lineTo(HX-6,HY-30);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(HX+2,HY-30);ctx.lineTo(HX+6,HY-48);ctx.lineTo(HX+16,HY-28);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle=PINK;ctx.strokeStyle='transparent';ctx.beginPath();ctx.moveTo(HX-16,HY-28);ctx.lineTo(HX-20,HY-43);ctx.lineTo(HX-8,HY-32);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(HX+3,HY-32);ctx.lineTo(HX+7,HY-44);ctx.lineTo(HX+14,HY-30);ctx.closePath();ctx.fill();ctx.fillStyle=WHITE;ctx.strokeStyle=LINE;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(HX,HY,HR,0,Math.PI*2);ctx.fill();ctx.stroke();}
+function drawTail(){tailPhase+=isTalking?0.055:0.030;const swing=Math.sin(tailPhase)*16,bob=Math.sin(tailPhase*1.6+0.8)*6,rx=BX+BRX-6,ry=BY+16,tx=BX+BRX-42+swing,ty=BY+BRY+2+bob,c1x=BX+BRX+24,c1y=BY+46,c2x=BX+BRX-2+swing*0.45,c2y=BY+BRY+16;function bp(t){const u=1-t;return[u*u*u*rx+3*u*u*t*c1x+3*u*t*t*c2x+t*t*t*tx,u*u*u*ry+3*u*u*t*c1y+3*u*t*t*c2y+t*t*t*ty];}ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='rgba(80,60,40,0.13)';ctx.lineWidth=24;ctx.beginPath();ctx.moveTo(rx+2,ry+3);ctx.bezierCurveTo(c1x+2,c1y+3,c2x+2,c2y+3,tx+2,ty+4);ctx.stroke();for(let i=0;i<18;i++){const t0=i/18,t1=(i+1)/18,w=22*Math.pow(1-t0,0.6)+2,[x0,y0]=bp(t0),[x1,y1]=bp(t1);ctx.strokeStyle='#f8f7f4';ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();}ctx.strokeStyle=LINE;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(rx,ry);ctx.bezierCurveTo(c1x,c1y,c2x,c2y,tx,ty);ctx.stroke();ctx.restore();}
+function drawFrontPaws(){ctx.lineWidth=2.5;ctx.strokeStyle=LINE;ctx.fillStyle=WHITE;ctx.beginPath();ctx.ellipse(62,126,17,10,0.1,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.beginPath();ctx.ellipse(92,130,17,10,0.1,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=PINK;[62,92].forEach(px=>{ctx.beginPath();ctx.ellipse(px,128,5.5,4,0,0,Math.PI*2);ctx.fill();});}
+function drawFaceExtras(){if(faceMode==='shy'||faceMode==='tsukkomi'){ctx.fillStyle='rgba(255,150,150,0.35)';ctx.beginPath();ctx.ellipse(ELX-6,EY+8,10,6,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(ERX+6,EY+8,10,6,0,0,Math.PI*2);ctx.fill();}if(faceMode==='waku'){ctx.fillStyle='#ffd700';ctx.font='bold 11px sans-serif';ctx.fillText('✦',ELX-13,EY-6);ctx.fillText('✦',ERX+6,EY-6);}}
+function drawEyes(){const lx=ELX,rx=ERX,ey=EY,er=ER;ctx.strokeStyle=LINE;function ne(){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(lx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();}
+if(['normal','sweat','waku'].includes(faceMode)){ne();}else if(faceMode==='shy'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.ellipse(lx,ey,er,er*0.6,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey,er,er*0.6,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.ellipse(lx,ey,er*0.5,er*0.35,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey,er*0.5,er*0.35,0,0,Math.PI*2);ctx.fill();}else if(faceMode==='heart'){function h(hx,hy){const s=6;ctx.fillStyle='#ff4488';ctx.beginPath();ctx.moveTo(hx,hy+s*0.3);ctx.bezierCurveTo(hx,hy-s*0.5,hx-s*1.1,hy-s*0.5,hx-s*1.1,hy);ctx.bezierCurveTo(hx-s*1.1,hy+s*0.6,hx,hy+s*1.2,hx,hy+s*1.2);ctx.bezierCurveTo(hx,hy+s*1.2,hx+s*1.1,hy+s*0.6,hx+s*1.1,hy);ctx.bezierCurveTo(hx+s*1.1,hy-s*0.5,hx,hy-s*0.5,hx,hy+s*0.3);ctx.fill();}h(lx,ey);h(rx,ey);}else if(faceMode==='doya'||faceMode==='niyari'){ne();ctx.fillStyle=WHITE;ctx.fillRect(rx-er-1,ey-er-1,(er+1)*2,er+2);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();}else if(['blink','sleepy'].includes(faceMode)){ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(lx-er,ey);ctx.lineTo(lx+er,ey);ctx.stroke();ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();}else if(faceMode==='surprise'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.7,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(rx,ey,er*0.7,0,Math.PI*2);ctx.fill();}else if(faceMode==='angry'||faceMode==='tsukkomi'){ctx.lineWidth=2.5;const hw=er+3;ctx.beginPath();ctx.moveTo(lx-hw,ey+hw*0.7);ctx.lineTo(lx+1,ey);ctx.lineTo(lx-hw,ey-hw*0.7);ctx.stroke();ctx.beginPath();ctx.moveTo(rx+hw,ey+hw*0.7);ctx.lineTo(rx-1,ey);ctx.lineTo(rx+hw,ey-hw*0.7);ctx.stroke();}else if(faceMode==='happy'){ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(lx,ey+3,er+1,Math.PI*1.1,Math.PI*1.9);ctx.stroke();ctx.beginPath();ctx.arc(rx,ey+3,er+1,Math.PI*1.1,Math.PI*1.9);ctx.stroke();}else if(faceMode==='cry'||faceMode==='worry'){ne();if(faceMode==='cry'){ctx.fillStyle='#80c0ff';ctx.beginPath();ctx.ellipse(lx,ey+er+3,2,5,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(rx,ey+er+3,2,5,0,0,Math.PI*2);ctx.fill();}}else if(faceMode==='think'){ctx.fillStyle='#5aaa5a';ctx.beginPath();ctx.arc(lx,ey,er,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.arc(lx,ey,er*0.55,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(lx+1,ey-1,1.5,0,Math.PI*2);ctx.fill();ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx-er,ey);ctx.lineTo(rx+er,ey);ctx.stroke();ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(rx-er,ey-er-2);ctx.quadraticCurveTo(rx,ey-er-5,rx+er,ey-er-2);ctx.stroke();}else{ne();}}
+function drawNose(){ctx.fillStyle=PINK;ctx.beginPath();ctx.arc(HX,NY,3,0,Math.PI*2);ctx.fill();}
+function drawMouth(){ctx.lineWidth=2;ctx.strokeStyle=LINE;if(!mouthOpen){if(['angry','worry','cry','sleepy'].includes(faceMode)){ctx.beginPath();ctx.moveTo(HX-8,MY+3);ctx.quadraticCurveTo(HX,MY,HX+8,MY+3);ctx.stroke();}else if(['happy','waku','niyari'].includes(faceMode)){ctx.beginPath();ctx.moveTo(HX-8,MY-2);ctx.quadraticCurveTo(HX,MY+7,HX+8,MY-2);ctx.stroke();}else{ctx.beginPath();ctx.arc(HX-6,MY,4.5,0,Math.PI);ctx.stroke();ctx.beginPath();ctx.arc(HX+6,MY,4.5,0,Math.PI);ctx.stroke();ctx.beginPath();ctx.moveTo(HX-1.5,MY);ctx.lineTo(HX+1.5,MY);ctx.stroke();}}else{ctx.fillStyle='#c04040';ctx.beginPath();ctx.ellipse(HX,MY+3,9,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#e08080';ctx.beginPath();ctx.ellipse(HX,MY+6,5,3,0,0,Math.PI*2);ctx.fill();}}
+function drawWhiskers(){ctx.lineWidth=1.2;ctx.strokeStyle='#aaa';const wy=NY+2;[[-2,-3],[0,2],[-2,7]].forEach(([dx,dy])=>{ctx.beginPath();ctx.moveTo(HX-6,wy+dy*0.3);ctx.lineTo(HX-34+dx,wy+dy);ctx.stroke();});[[2,-3],[0,2],[2,7]].forEach(([dx,dy])=>{ctx.beginPath();ctx.moveTo(HX+6,wy+dy*0.3);ctx.lineTo(HX+30+dx,wy+dy);ctx.stroke();});}
+function setFace(m,d){faceMode=m;draw();if(faceTimer)clearTimeout(faceTimer);if(d)faceTimer=setTimeout(()=>{faceMode='normal';draw();},d);}
+function autoFace(t){
+  if(/危ない|あかん|なんでやねん|散開/.test(t))setFace('angry',2000);
+  else if(/調べ|検索|ちょっと待/.test(t))setFace('think',5000);
+  else if(/やった|最高|めっちゃ|すごい|ばっちり/.test(t))setFace('happy',2000);
+  else if(/悲し|泣|ひどい/.test(t))setFace('cry',2000);
+  else if(/好き|かわい|ゆっぴ/.test(t))setFace('heart',2000);
+  else if(/FF|ゲーム|装備|ジョブ|ハルシネ|リトレ/.test(t))setFace('waku',2000);
+  else if(/困|わから|むずか/.test(t))setFace('worry',2000);
+  else if(/なるほど|ドヤ/.test(t))setFace('doya',1500);}
+function startTalking(){if(isTalking)return;isTalking=true;wrap.classList.add('talking');talkInterval=setInterval(()=>{mouthOpen=!mouthOpen;draw();},200);}
+function stopTalking(){isTalking=false;clearInterval(talkInterval);mouthOpen=false;wrap.classList.remove('talking');draw();}
+function scheduleBlink(){setTimeout(()=>{if(faceMode==='normal'){faceMode='blink';draw();setTimeout(()=>{faceMode='normal';draw();scheduleBlink();},160);}else scheduleBlink();},Math.random()*4000+2500);}
+(function loop(){draw();requestAnimationFrame(loop);})();
+scheduleBlink();
+
+// ═══════════════════════════════════════════════
+//  UI（シンプル会話のみ）
+// ═══════════════════════════════════════════════
+const bubble   = document.getElementById('bubble');
+const panel    = document.getElementById('panel');
+const chatLog  = document.getElementById('chat-log');
+const textInput= document.getElementById('text-input');
+const micDot   = document.getElementById('mic-dot');
+let panelOpen  = false, bubbleTimer = null, panelTimer = null;
+
+// 日本語読速 約600字/分 → 1文字 ≒ 100ms。最短8秒・最長90秒
+function calcReadMs(text){ return Math.max(8000, Math.min(90000, (text||'').length * 100)); }
+
+// テロップ（返答を吹き出しで表示・パネルと独立）
+function showTelop(text){
+  bubble.textContent = text;
+  bubble.classList.add('show');
+  if(bubbleTimer) clearTimeout(bubbleTimer);
+  bubbleTimer = setTimeout(()=>bubble.classList.remove('show'), calcReadMs(text));
+}
+
+// パネルはユーザー操作のみ・自動開閉なし
+function openPanel(){
+  panelOpen = true; panel.classList.add('open');
+  if(window._desktopMode && window.pywebview?.api?.resize) pywebview.api.resize(300,520);
+}
+function closePanel(){
+  panelOpen = false; panel.classList.remove('open');
+  if(window._desktopMode && window.pywebview?.api?.resize) pywebview.api.resize(300,280);
+}
+function togglePanel(){ panelOpen ? closePanel() : openPanel(); }
+
+function addMsg(role, text){
+  const d = document.createElement('div');
+  d.className = role === 'user' ? 'msg-user' : ('msg-mippi' + (text.includes('\n') ? ' diagram' : ''));
+  d.textContent = text;
+  chatLog.appendChild(d);
+  if(chatLog.children.length > 60) chatLog.removeChild(chatLog.firstChild);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function sendText(){
+  const text = textInput.value.trim();
+  if(!text) return;
+  if(!ws || ws.readyState !== WebSocket.OPEN){
+    showTelop('サーバーに繋がってないで！012_start.bat を起動してな。');
+    return;
+  }
+  ws.send(JSON.stringify({cmd:'user_text', text}));
+  textInput.value = '';
+}
+textInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendText(); }
+});
+
+// ═══════════════════════════════════════════════
+//  WebSocket
+// ═══════════════════════════════════════════════
+let ws = null;
+function connectWS(){
+  ws = new WebSocket('ws://127.0.0.1:9012');
+  ws.onopen  = ()=>{ micDot.classList.add('active'); };
+  ws.onclose = ()=>{ micDot.classList.remove('active','recording'); setTimeout(connectWS,3000); };
+  ws.onerror = ()=>{};
+  ws.onmessage = e=>{ try{ handleCmd(JSON.parse(e.data)); }catch{} };
+}
+function handleCmd(d){
+  if(!d?.cmd) return;
+  switch(d.cmd){
+    case 'talkStart': startTalking(); break;
+    case 'talkStop':  stopTalking(); setFace('normal'); break;
+    case 'setFace':   setFace(d.face, d.duration||2500); break;
+    case 'autoFace':  autoFace(d.text||''); break;
+    case 'user_msg':
+      addMsg('user', d.text||''); break;  // パネルは自動で開かない
+    case 'reply':
+      if(d.text){
+        addMsg('mippi', d.text);
+        showTelop(d.text);  // 常にテロップで表示（パネル開閉なし）
+      }
+      break;
+  }
+}
+connectWS();
+
+// デスクトップモード（PyWebView）ドラッグ移動
+window._desktopMode = false;
+(function setupDrag(){
+  const area = document.getElementById('cat-area');
+  let dragging=false, lx=0, ly=0;
+  area.addEventListener('mousedown', e=>{ if(!window._desktopMode)return; dragging=true; lx=e.screenX; ly=e.screenY; e.preventDefault(); });
+  document.addEventListener('mousemove', e=>{ if(!dragging)return; const dx=e.screenX-lx, dy=e.screenY-ly; lx=e.screenX; ly=e.screenY; if(window.pywebview?.api?.move_delta) pywebview.api.move_delta(dx,dy); });
+  document.addEventListener('mouseup', ()=>{ dragging=false; });
+})();
+</script>
+</body>
+</html>

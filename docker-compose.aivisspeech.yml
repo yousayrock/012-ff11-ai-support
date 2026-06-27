@@ -1,0 +1,11 @@
+services:
+  aivisspeech:
+    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
+    ports:
+      - "10101:10101"
+    volumes:
+      - aivisspeech-data:/home/user/.local/share/AivisSpeech-Engine-Dev
+    restart: unless-stopped
+
+volumes:
+  aivisspeech-data:
