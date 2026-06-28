@@ -3,22 +3,6 @@
 *.key
 vts_token.txt
 
-# ── 003号（みっぴ配信AI）のファイル ────────────────
-mippi_main.py
-mippi_main_backup_*.py
-mippi_remote_qr.png
-start_mippi.bat
-nana_live2d.html
-telop.html
-comment_widget.html
-cost_widget.html
-navi_hud.html
-ROADMAP.md
-OBS設定説明書.md
-みっぴ取扱説明書.md
-requirements.txt
-api_cost.json
-
 # ── 個人データ・ログ ────────────────────────────────
 012_log.txt
 012_knowledge.json
