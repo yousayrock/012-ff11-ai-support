@@ -1,7 +1,7 @@
 """
 012号 FF11アシスタントくん — デスクトップキャラクターランチャー
-透過・フレームレス・常時最前面の小窓でみっぴを表示する。
-透明部分はクリックスルー、キャラ・パネル部分は通常クリック可能。
+透過・フレームレス・常時最前面。SetWindowRgn でインタラクティブ領域を管理。
+透明部分はクリックスルー（領域外）、UI部分は通常クリック可能（領域内）。
 """
 import sys, os, time, subprocess, ctypes, threading, json
 import ctypes.wintypes as wt
@@ -21,135 +21,156 @@ def _screen_size():
 
 SCREEN_W, SCREEN_H = _screen_size()
 
-# ── Win32 クリックスルー制御 ───────────────────────────────────────────────────
-GWL_EXSTYLE       = -20
-WS_EX_LAYERED     = 0x00080000
-WS_EX_TRANSPARENT = 0x00000020
-WH_MOUSE_LL       = 14
-
-# 64-bit Windows 対応: LRESULT / LPARAM / WPARAM は pointer サイズ
-_IS64 = ctypes.sizeof(ctypes.c_void_p) == 8
-_LRESULT  = ctypes.c_longlong  if _IS64 else ctypes.c_long
-_LPARAM   = ctypes.c_longlong  if _IS64 else ctypes.c_long
-_WPARAM   = ctypes.c_ulonglong if _IS64 else ctypes.c_ulong
-_ULONG_PTR = ctypes.c_uint64  if _IS64 else ctypes.c_uint32
-
-_hwnd           = None
-_clickthrough   = False
-_rect_lock      = threading.Lock()
-_interactive_rects: list = []   # [{l,t,r,b}, ...]
-_hook_handle    = None
-
-class _POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
-class _MSLLHOOKSTRUCT(ctypes.Structure):
-    _fields_ = [
-        ("pt",          _POINT),
-        ("mouseData",   wt.DWORD),
-        ("flags",       wt.DWORD),
-        ("time",        wt.DWORD),
-        ("dwExtraInfo", _ULONG_PTR),
-    ]
-
-# Win32 API に正しい型を設定
 _u32 = ctypes.windll.user32
-if _IS64:
-    _u32.GetWindowLongPtrW.restype  = _LRESULT
-    _u32.SetWindowLongPtrW.restype  = _LRESULT
-    _GetWndLong = _u32.GetWindowLongPtrW
-    _SetWndLong = _u32.SetWindowLongPtrW
-else:
-    _GetWndLong = _u32.GetWindowLongW
-    _SetWndLong = _u32.SetWindowLongW
-_u32.CallNextHookEx.restype  = _LRESULT
-_u32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, _WPARAM, _LPARAM]
 
-def _set_transparent(enable: bool):
+_hwnd          = None
+_rect_lock     = threading.Lock()
+_interactive_rects: list = []
+_prev_region_key   = None
+_window_ref    = None  # pywebview Window 参照（evaluate_js ポーリング用）
+
+_RECTS_JS = (
+    "(function(){"
+    "  var wx=window.screenLeft||window.screenX||0;"
+    "  var wy=window.screenTop||window.screenY||0;"
+    "  var ids=['container','panel','telop-bar','voice-ui'];"
+    "  var out=[];"
+    "  for(var i=0;i<ids.length;i++){"
+    "    var el=document.getElementById(ids[i]); if(!el)continue;"
+    "    var st=window.getComputedStyle(el);"
+    "    if(st.display==='none'||st.visibility==='hidden')continue;"
+    "    if(parseFloat(st.opacity)<0.05)continue;"
+    "    var r=el.getBoundingClientRect();"
+    "    if(r.width<1||r.height<1)continue;"
+    "    out.push({l:Math.floor(wx+r.left),t:Math.floor(wy+r.top),"
+    "              r:Math.ceil(wx+r.right),b:Math.ceil(wy+r.bottom)});"
+    "  }"
+    "  return JSON.stringify(out);"
+    "})()"
+)
+
+def _apply_rects_from_js():
+    """evaluate_js で rects を直接取得してリージョンに反映"""
+    if not _window_ref or not _hwnd:
+        return
+    try:
+        rects_json = _window_ref.evaluate_js(_RECTS_JS)
+        if not rects_json:
+            return
+        data = json.loads(rects_json)
+        with _rect_lock:
+            _interactive_rects.clear()
+            _interactive_rects.extend(data)
+        _update_window_region()
+    except Exception as e:
+        pass  # ページ遷移中など一時的なエラーは無視
+
+def _start_region_poll():
+    """1秒ごとに rects を確認してリージョンを更新するポーリングスレッド"""
+    while True:
+        time.sleep(1.0)
+        _apply_rects_from_js()
+
+# ── ウィンドウリージョン管理 ────────────────────────────────────────────────
+def _update_window_region():
+    """JS から渡されたUI矩形でウィンドウリージョンを更新する。
+    領域外はクリックスルー＋非表示になる。"""
+    global _prev_region_key
     if not _hwnd:
         return
-    style = _GetWndLong(_hwnd, GWL_EXSTYLE)
-    style = (style | WS_EX_TRANSPARENT) if enable else (style & ~WS_EX_TRANSPARENT)
-    _SetWndLong(_hwnd, GWL_EXSTYLE, style)
+    with _rect_lock:
+        rects = list(_interactive_rects)
 
-def _mouse_hook_proc(nCode, wParam, lParam):
-    global _clickthrough
-    if nCode >= 0 and _hwnd:
-        pt = ctypes.cast(lParam, ctypes.POINTER(_MSLLHOOKSTRUCT)).contents.pt
-        x, y = pt.x, pt.y
-        with _rect_lock:
-            rects = list(_interactive_rects)
-        if rects:
-            over = any(r['l'] <= x <= r['r'] and r['t'] <= y <= r['b'] for r in rects)
-            if over and _clickthrough:
-                _set_transparent(False)
-                _clickthrough = False
-            elif not over and not _clickthrough:
-                _set_transparent(True)
-                _clickthrough = True
-    return _u32.CallNextHookEx(_hook_handle, nCode, wParam, lParam)
-
-_HOOKPROC = ctypes.WINFUNCTYPE(_LRESULT, ctypes.c_int, _WPARAM, _LPARAM)
-_hook_cb  = _HOOKPROC(_mouse_hook_proc)
-
-def _run_hook():
-    global _hook_handle
-    _hook_handle = _u32.SetWindowsHookExW(WH_MOUSE_LL, _hook_cb, None, 0)
-    if not _hook_handle:
-        print("[WND] フック設定失敗")
+    key = tuple((r['l'], r['t'], r['r'], r['b']) for r in rects)
+    if key == _prev_region_key:
         return
-    print("[WND] マウスフック開始")
-    msg = wt.MSG()
-    while _u32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-        _u32.TranslateMessage(ctypes.byref(msg))
-        _u32.DispatchMessageW(ctypes.byref(msg))
-    _u32.UnhookWindowsHookEx(_hook_handle)
+    _prev_region_key = key
 
-def _find_hwnd_and_start_hook():
-    """プロセスの最大可視ウィンドウを HWND として取得し、フックを開始する"""
+    gdi32 = ctypes.windll.gdi32
+    win_rect = wt.RECT()
+    _u32.GetWindowRect(_hwnd, ctypes.byref(win_rect))
+    ox, oy = win_rect.left, win_rect.top
+
+    if not rects:
+        # リージョン未指定 → ウィンドウ全体を表示（起動直後のフォールバック）
+        _u32.SetWindowRgn(_hwnd, None, True)
+        return
+
+    r0 = rects[0]
+    combined = gdi32.CreateRectRgn(
+        r0['l'] - ox, r0['t'] - oy,
+        r0['r'] - ox, r0['b'] - oy
+    )
+    for r in rects[1:]:
+        rgn = gdi32.CreateRectRgn(
+            r['l'] - ox, r['t'] - oy,
+            r['r'] - ox, r['b'] - oy
+        )
+        gdi32.CombineRgn(combined, combined, rgn, 2)  # RGN_OR
+        gdi32.DeleteObject(rgn)
+
+    _u32.SetWindowRgn(_hwnd, combined, True)
+    # SetWindowRgn がリージョンの所有権を持つので DeleteObject しない
+    print(f"[WND] リージョン更新: {len(rects)} rects")
+
+def _find_hwnd_and_setup():
+    """HWND を取得して DWM 透過を設定する"""
     global _hwnd
-    time.sleep(0.3)  # ウィンドウが確実に表示されるまで待つ
+    time.sleep(0.5)
     our_pid = os.getpid()
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
     candidates = []
 
     def _enum_cb(hwnd, _):
-        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+        if not _u32.IsWindowVisible(hwnd):
             return True
         pid = wt.DWORD()
-        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        _u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         if pid.value == our_pid:
             r = wt.RECT()
-            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+            _u32.GetWindowRect(hwnd, ctypes.byref(r))
             area = max(0, r.right - r.left) * max(0, r.bottom - r.top)
             if area > 0:
                 candidates.append((hwnd, area))
         return True
 
     cb = WNDENUMPROC(_enum_cb)
-    ctypes.windll.user32.EnumWindows(cb, 0)
+    _u32.EnumWindows(cb, 0)
 
-    if candidates:
-        _hwnd = max(candidates, key=lambda x: x[1])[0]
-        print(f"[WND] HWND=0x{_hwnd:08X}")
-        # WS_EX_LAYERED が確実に設定されていることを確認
-        style = ctypes.windll.user32.GetWindowLongW(_hwnd, GWL_EXSTYLE)
-        style |= WS_EX_LAYERED
-        ctypes.windll.user32.SetWindowLongW(_hwnd, GWL_EXSTYLE, style)
-        _run_hook()  # ブロッキング（メッセージループ）
-    else:
-        print("[WND] ウィンドウ未検出、クリックスルー無効")
+    if not candidates:
+        print("[WND] ウィンドウ未検出")
+        return
 
+    _hwnd = max(candidates, key=lambda x: x[1])[0]
+    print(f"[WND] HWND=0x{_hwnd:08X}")
+
+    # Python 側から直接 JS に問い合わせて初回リージョンを設定
+    try:
+        rects_json = _window_ref.evaluate_js(_RECTS_JS)
+        print(f"[WND] 初回 rects: {rects_json}")
+        if rects_json:
+            with _rect_lock:
+                _interactive_rects.clear()
+                _interactive_rects.extend(json.loads(rects_json))
+    except Exception as e:
+        print(f"[WND] rects 直接取得失敗: {e}")
+    _update_window_region()
+    # 定期ポーリング開始（ドラッグ・パネル開閉に追従）
+    threading.Thread(target=_start_region_poll, daemon=True).start()
+
+# ── JS から呼ばれるAPI ────────────────────────────────────────────────────
 def update_rects(rects_json: str):
-    """JS から呼ばれる: インタラクティブ領域(スクリーン座標)の更新"""
+    """インタラクティブ領域(スクリーン座標)の更新 → ウィンドウリージョンに反映"""
+    print(f"[RECTS] JS→Python 受信: {rects_json[:120]}")
     with _rect_lock:
         try:
             _interactive_rects.clear()
             _interactive_rects.extend(json.loads(rects_json))
         except Exception:
-            pass
+            return
+    _update_window_region()
 
-# ── サーバー起動 ────────────────────────────────────────────────────────────────
+# ── サーバー起動 ────────────────────────────────────────────────────────────
 _server_proc = None
 
 def start_server():
@@ -170,7 +191,7 @@ def wait_server(url="http://127.0.0.1:8012/", timeout=15):
             time.sleep(0.2)
     return False
 
-# ── メイン ──────────────────────────────────────────────────────────────────────
+# ── メイン ──────────────────────────────────────────────────────────────────
 def main():
     print("[012] サーバー起動中...")
     start_server()
@@ -197,12 +218,30 @@ def main():
     )
 
     def on_loaded():
-        window.evaluate_js(
-            "window._desktopMode = true;"
-            "document.documentElement.style.background='transparent';"
-            "document.body.style.background='transparent';"
-        )
-        threading.Thread(target=_find_hwnd_and_start_hook, daemon=True).start()
+        global _window_ref
+        _window_ref = window
+        window.evaluate_js("window._desktopMode = true;")
+        threading.Thread(target=_find_hwnd_and_setup, daemon=True).start()
+
+        def _debug_and_trigger():
+            time.sleep(0.3)
+            try:
+                api_keys = window.evaluate_js(
+                    "JSON.stringify(Object.keys(window.pywebview?.api || {}))"
+                )
+                print(f"[JS] pywebview.api keys: {api_keys}")
+                fn_type = window.evaluate_js(
+                    "typeof window.pywebview?.api?.update_rects"
+                )
+                print(f"[JS] update_rects type: {fn_type}")
+            except Exception as e:
+                print(f"[JS] debug check error: {e}")
+            # 0.3s 後に rects を強制送信（HWND setup 完了前にキャッシュしておく）
+            window.evaluate_js(
+                "if(typeof updateClickthroughRects==='function') updateClickthroughRects();"
+            )
+
+        threading.Thread(target=_debug_and_trigger, daemon=True).start()
 
     window.events.loaded += on_loaded
     window.expose(update_rects)
