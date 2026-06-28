@@ -1,0 +1,29 @@
+services:
+  mia-server:
+    build: .
+    ports:
+      - "8012:8012"
+      - "9012:9012"
+    env_file: .env
+    environment:
+      - TTS_URL=http://aivisspeech:10101
+    depends_on:
+      aivisspeech:
+        condition: service_healthy
+    restart: unless-stopped
+
+  aivisspeech:
+    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
+    ports:
+      - "10101:10101"
+    volumes:
+      - aivisspeech-data:/home/user/.local/share/AivisSpeech-Engine-Dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10101/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  aivisspeech-data:

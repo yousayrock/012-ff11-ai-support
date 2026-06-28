@@ -46,13 +46,31 @@ A desktop AI support system for Final Fantasy XI players.
 
 ## 🛠️ セットアップ / Setup
 
-### 必要なもの / Requirements
+### 🐳 Docker（推奨 — 別PCでもすぐ動く）
 
-- Python 3.10+
+```bash
+git clone https://github.com/yousayrock/012-ff11-mippi.git
+cd 012-ff11-mippi
+cp .env.example .env
+# .env に ANTHROPIC_API_KEY を記入
+docker compose up --build
+```
+
+ブラウザで `http://localhost:8012/` を開くと使えます。  
+AivisSpeech も自動で起動します。
+
+> **注意**: Docker版はブラウザUIのみ。マイク入力とデスクトップキャラ表示はネイティブ版が必要です。
+
+---
+
+### 🖥️ ネイティブ（デスクトップキャラ＋マイク入力）
+
+**必要なもの**
+- Python 3.10〜3.13（3.14は動作確認中）
 - [Anthropic API キー](https://console.anthropic.com/)
 - （任意）GPU：faster-whisper の高速化に使用
 
-### インストール / Installation
+**インストール**
 
 ```bash
 pip install -r 012_requirements.txt
@@ -64,17 +82,11 @@ pip install -r 012_requirements.txt
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### 起動 / Launch
+**起動**
 
-**デスクトップキャラとして起動（推奨）**
 ```
-012_desktop.bat をダブルクリック
-```
-
-**ブラウザで使う場合**
-```
-012_start.bat をダブルクリック
-→ ブラウザで http://localhost:8012/ を開く
+012_desktop.bat をダブルクリック   ← デスクトップキャラ（推奨）
+012_start.bat をダブルクリック     ← ブラウザ版のみ
 ```
 
 ---
