@@ -103,7 +103,7 @@ def main():
         frameless        = True,
         on_top           = True,
         min_size         = (160, 160),
-        background_color = "#00000000",
+        background_color = "#000000",
     )
 
     win_pos  = [x, y]

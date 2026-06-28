@@ -182,7 +182,7 @@ WHISPER_MODEL       = "small"
 MIC_SEARCH_KEYWORD  = "airpods"
 SAMPLE_RATE         = 16000
 CHUNK_SIZE          = 1024
-VOICE_THRESHOLD     = 99999  # 音声入力一時停止（ゲーム音誤反応防止）
+VOICE_THRESHOLD     = 99999  # 発話検知閾値（AirPods接続時のみ有効な値に下げる）
 POST_SILENCE_SEC    = 1.2    # 無音1.2秒で送信（短い発話の誤送信防止）
 MIN_VOICE_SEC       = 1.5    # 1.5秒未満はノイズとして捨てる
 INTERRUPT_MIN_CHUNKS = 10   # 割り込み検知の連続チャンク数
@@ -201,7 +201,7 @@ def brave_search(query: str, max_results: int = 4) -> str:
     if not BRAVE_API_KEY:
         return ddg_search(query, max_results)  # キー未設定時はDDGフォールバック
     try:
-        resp = _requests_mod.get(
+        resp = _req.get(
             "https://api.search.brave.com/res/v1/web/search",
             params={"q": f"FF11 FFXI {query}", "count": max_results,
                     "country": "jp", "search_lang": "ja", "ui_lang": "ja-JP"},
@@ -416,11 +416,12 @@ class FF11System:
         self.interrupt_req   = False
         self._use_voicevox   = False
         self.running         = True
-        # sounddevice プッシュトゥトーク
+        # sounddevice 録音
         self._sd_frames: list = []
         self._sd_stream       = None
         self._sd_lock         = threading.Lock()
         self._sd_rate: int    = SAMPLE_RATE
+        self._sd_vad_stop     = threading.Event()  # VADセッション停止フラグ
 
     # ──────────────────────────────────────────────────────────────
     #  初期化
@@ -714,13 +715,15 @@ class FF11System:
                         elif cmd == "interrupt":
                             self.interrupt_req = True
                         elif cmd == "mic_start":
-                            self._sd_mic_start()
+                            self._sd_vad_stop.clear()
                             await self.browser_send({"cmd": "mic_state", "state": "recording"})
-                        elif cmd == "mic_stop":
-                            audio = self._sd_mic_stop()
-                            await self.browser_send({"cmd": "mic_state", "state": "processing"})
-                            if audio is not None and len(audio) > SAMPLE_RATE * 0.3:
+                            async def _vad_task():
                                 loop = asyncio.get_event_loop()
+                                audio = await loop.run_in_executor(None, self._sd_mic_vad_session)
+                                if audio is None:
+                                    await self.browser_send({"cmd": "mic_state", "state": "idle"})
+                                    return
+                                await self.browser_send({"cmd": "mic_state", "state": "processing"})
                                 text = await loop.run_in_executor(None, self.transcribe, audio)
                                 if text:
                                     print(f"[MIC] 音声認識: 「{text}」")
@@ -729,8 +732,11 @@ class FF11System:
                                 else:
                                     print("[MIC] 音声認識: テキストなし")
                                     await self.browser_send({"cmd": "mic_state", "state": "idle"})
-                            else:
-                                await self.browser_send({"cmd": "mic_state", "state": "idle"})
+                            asyncio.ensure_future(_vad_task())
+                        elif cmd == "mic_stop":
+                            # 録音中キャンセル
+                            self._sd_vad_stop.set()
+                            await self.browser_send({"cmd": "mic_state", "state": "idle"})
                     except Exception:
                         pass
             except Exception:
@@ -814,28 +820,115 @@ class FF11System:
     #  sounddevice プッシュトゥトーク
     # ──────────────────────────────────────────────────────────────
 
-    def _sd_mic_start(self):
+    def _sd_mic_vad_session(self) -> "np.ndarray | None":
+        """
+        1クリックで録音開始→自動VAD停止→音声データを返す。
+        ・録音直後0.4秒でノイズフロアをキャリブレーション
+        ・ノイズフロア×1.8 を動的閾値とする
+        ・発話開始後、POST_SILENCE_SEC 無音が続いたら終了
+        ・最大 MAX_RECORD_SEC 秒で強制終了
+        """
         if not SOUNDDEVICE_OK:
-            print("[MIC] sounddevice なし → スキップ")
-            return
+            return None
+
+        MAX_RECORD_SEC  = 30
+        CAL_SEC         = 0.4
+
+        chunk_q: "queue.Queue[np.ndarray]" = queue.Queue()
+        self._sd_vad_stop.clear()
+
         try:
-            with self._sd_lock:
-                self._sd_frames = []
-            # デバイスのネイティブレートを使用（後でリサンプル）
-            dev_info = sd.query_devices(sd.default.device[0])
+            dev_info    = sd.query_devices(sd.default.device[0])
             native_rate = int(dev_info['default_samplerate'])
-            self._sd_rate = native_rate
-            def _cb(indata, frames_count, time_info, status):
-                with self._sd_lock:
-                    self._sd_frames.append(indata.copy())
-            self._sd_stream = sd.InputStream(
-                samplerate=native_rate, channels=1, dtype='float32',
-                callback=_cb, blocksize=CHUNK_SIZE
-            )
-            self._sd_stream.start()
-            print(f"[MIC] 録音開始 ({native_rate}Hz)")
-        except Exception as e:
-            print(f"[MIC] 録音開始エラー: {e}")
+        except Exception:
+            native_rate = SAMPLE_RATE
+
+        def _cb(indata, frames_count, time_info, status):
+            chunk_q.put(indata.copy())
+
+        stream = sd.InputStream(
+            samplerate=native_rate, channels=1, dtype='float32',
+            callback=_cb, blocksize=CHUNK_SIZE
+        )
+        stream.start()
+        print(f"[MIC] VAD録音開始 ({native_rate}Hz) — 話し終わると自動送信")
+
+        # キャリブレーション
+        cal_chunks = int(CAL_SEC * native_rate / CHUNK_SIZE)
+        cal_data   = []
+        for _ in range(cal_chunks):
+            try:
+                cal_data.append(chunk_q.get(timeout=1.0))
+            except queue.Empty:
+                break
+        if cal_data:
+            raw = float(np.sqrt(np.mean(np.concatenate(cal_data) ** 2))) * 32768 * 1.8
+            noise_floor = max(raw, 2000)  # 下限2000（スピーカー回り込み・低すぎる閾値を防ぐ）
+        else:
+            noise_floor = 2000
+        print(f"[MIC] 動的閾値={noise_floor:.0f}")
+
+        # VADループ
+        all_frames: list  = []  # キャリブ音声は含めない（クリーンな発話のみ）
+        silence_limit     = int(POST_SILENCE_SEC * native_rate / CHUNK_SIZE)
+        voice_started     = False
+        silent_chunks     = 0
+        deadline          = time.time() + MAX_RECORD_SEC
+
+        try:
+            while time.time() < deadline and not self._sd_vad_stop.is_set():
+                try:
+                    chunk = chunk_q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+
+                # TTS再生中はフレームを破棄（スピーカー音の回り込み防止）
+                if self.is_speaking:
+                    voice_started = False
+                    silent_chunks = 0
+                    all_frames.clear()
+                    continue
+
+                rms = float(np.sqrt(np.mean(chunk ** 2))) * 32768
+
+                if rms > noise_floor:
+                    if not voice_started:
+                        print(f"[MIC] 発話検出 RMS={rms:.0f} (閾値={noise_floor:.0f})")
+                    voice_started = True
+                    silent_chunks = 0
+                    all_frames.append(chunk)
+                elif voice_started:
+                    all_frames.append(chunk)
+                    silent_chunks += 1
+                    if silent_chunks >= silence_limit:
+                        print(f"[MIC] 無音検出 → 録音終了")
+                        break  # 発話終了
+        finally:
+            stream.stop()
+            stream.close()
+
+        if self._sd_vad_stop.is_set():
+            # PTTモードでmouseup → 発話があれば音声を返す、なければキャンセル
+            if not voice_started or not all_frames:
+                print("[MIC] キャンセル（発話なし）")
+                return None
+            print("[MIC] PTT終了 → 録音データを使用")
+        elif not voice_started:
+            print("[MIC] 発話なし")
+            return None
+
+        audio = np.concatenate(all_frames, axis=0).flatten()
+        dur   = len(audio) / native_rate
+        print(f"[MIC] VAD録音完了 {dur:.1f}s")
+        if dur < MIN_VOICE_SEC:
+            print("[MIC] 短すぎ → スキップ")
+            return None
+
+        if native_rate != SAMPLE_RATE:
+            pcm16 = (audio * 32768).astype(np.int16)
+            pcm16 = self._resample(pcm16, native_rate, SAMPLE_RATE)
+            audio = pcm16.astype(np.float32) / 32768.0
+        return audio
 
     def _sd_mic_stop(self) -> "np.ndarray | None":
         if not SOUNDDEVICE_OK or self._sd_stream is None:
@@ -872,51 +965,56 @@ class FF11System:
         return np.interp(x_new, x_old, pcm.astype(np.float64)).astype(np.int16)
 
     def _mic_loop(self):
-        if not PYAUDIO_OK:
-            print("[MIC] pyaudio 未インストール → マイク入力スキップ")
+        if not SOUNDDEVICE_OK:
+            print("[MIC] sounddevice なし → VAD スキップ")
             return
-        if VOICE_THRESHOLD >= 9999:
-            print("[MIC] 音声入力無効（VOICE_THRESHOLD=99999）。テキスト入力のみ有効。")
-            return  # 閾値が高すぎる場合はマイクを起動しない
+        print(f"[MIC] VAD 開始 (threshold={VOICE_THRESHOLD}, silence={POST_SILENCE_SEC}s)")
         while self.running:
             try:
-                self._mic_inner()
+                self._mic_inner_sd()
             except Exception as e:
                 print(f"[MIC] エラー: {e} → 5秒後に再起動")
                 for _ in range(5):
                     if not self.running: return
                     time.sleep(1)
 
-    def _mic_inner(self):
-        pa              = pyaudio.PyAudio()
-        dev_idx, rate   = self._find_mic(pa)
-        need_resample   = (rate != SAMPLE_RATE)
-        silence_limit   = int(POST_SILENCE_SEC * rate / CHUNK_SIZE)
-
-        # BT-HFP 8000Hz デバイスは直接 open できない場合がある → 16000Hz を先に試す
-        stream = None
-        for try_rate in ([SAMPLE_RATE, rate] if rate != SAMPLE_RATE else [rate]):
-            try:
-                stream = pa.open(format=pyaudio.paInt16, channels=1, rate=try_rate,
-                                 input=True, input_device_index=dev_idx,
-                                 frames_per_buffer=CHUNK_SIZE)
-                rate = try_rate
-                need_resample = (rate != SAMPLE_RATE)
-                break
-            except Exception as e:
-                print(f"[MIC] {try_rate}Hz で open 失敗: {e}")
-        if stream is None:
-            pa.terminate()
-            raise RuntimeError("マイクを開けませんでした。デバイスを確認してください。")
-        print(f"[MIC] VAD 開始 (threshold={VOICE_THRESHOLD}, silence={POST_SILENCE_SEC}s, {rate}Hz)")
-
-        frames = []; voice_chunks = 0; silent_chunks = 0; recording = False
-
+    def _mic_inner_sd(self):
+        """sounddevice による VAD ループ（pyaudio 不要）"""
+        # デバイス選択：キーワードで探してなければデフォルト
+        dev_idx  = None
+        dev_rate = SAMPLE_RATE
         try:
+            devices = sd.query_devices()
+            for i, d in enumerate(devices):
+                if d["max_input_channels"] >= 1 and MIC_SEARCH_KEYWORD in d["name"].lower():
+                    dev_idx  = i
+                    dev_rate = int(d["default_samplerate"])
+                    print(f"[MIC] 検出: [{i}] {d['name']} ({dev_rate}Hz)")
+                    break
+            if dev_idx is None:
+                print(f"[MIC] '{MIC_SEARCH_KEYWORD}' 未検出 → デフォルトデバイスで続行")
+        except Exception as e:
+            print(f"[MIC] デバイス検索エラー: {e}")
+
+        silence_limit = int(POST_SILENCE_SEC * dev_rate / CHUNK_SIZE)
+        frames: list  = []
+        voice_chunks  = 0
+        silent_chunks = 0
+        recording     = False
+        chunk_buf     = queue.Queue()
+
+        def _cb(indata, frames_count, time_info, status):
+            chunk_buf.put(indata.copy())
+
+        with sd.InputStream(device=dev_idx, samplerate=dev_rate, channels=1,
+                            dtype='float32', blocksize=CHUNK_SIZE, callback=_cb):
             while self.running:
-                data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
-                pcm  = np.frombuffer(data, dtype=np.int16)
-                rms  = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
+                try:
+                    chunk = chunk_buf.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+
+                rms = float(np.sqrt(np.mean(chunk ** 2))) * 32768  # float→int16スケールに換算
 
                 if rms > VOICE_THRESHOLD:
                     if not recording:
@@ -924,28 +1022,27 @@ class FF11System:
                         frames        = []
                         voice_chunks  = 0
                         silent_chunks = 0
-                    frames.append(data)
-                    voice_chunks += 1
-                    silent_chunks = 0
-                    # 再生中に発話 → 割り込み
+                    frames.append(chunk.copy())
+                    voice_chunks  += 1
+                    silent_chunks  = 0
                     if self.is_speaking:
                         self.interrupt_req = True
                 else:
                     if recording:
-                        frames.append(data)
+                        frames.append(chunk.copy())
                         silent_chunks += 1
                         if silent_chunks >= silence_limit:
                             recording = False
-                            dur = len(frames) * CHUNK_SIZE / rate
+                            audio_f32 = np.concatenate(frames, axis=0).flatten()
+                            dur = len(audio_f32) / dev_rate
                             if dur >= MIN_VOICE_SEC:
-                                audio = np.frombuffer(b"".join(frames), dtype=np.int16)
-                                if need_resample:
-                                    audio = self._resample(audio, rate, SAMPLE_RATE)
-                                self.audio_q.put(audio.astype(np.float32) / 32768.0)
-                                print(f"[MIC] 録音完了 {dur:.1f}s → STT キューに追加")
+                                if dev_rate != SAMPLE_RATE:
+                                    pcm16 = (audio_f32 * 32768).astype(np.int16)
+                                    pcm16 = self._resample(pcm16, dev_rate, SAMPLE_RATE)
+                                    audio_f32 = pcm16.astype(np.float32) / 32768.0
+                                self.audio_q.put(audio_f32)
+                                print(f"[MIC] VAD 録音完了 {dur:.1f}s → STT キューに追加")
                             frames = []
-        finally:
-            stream.stop_stream(); stream.close(); pa.terminate()
 
     def transcribe(self, audio_f32: np.ndarray) -> str:
         if not self.whisper:

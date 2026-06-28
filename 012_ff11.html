@@ -177,6 +177,119 @@ html, body {
   background:rgba(200,150,42,0.5); animation:mpulse 0.7s infinite;
 }
 
+/* モード切り替えバー（チャットパネル内） */
+#mode-bar {
+  display:flex; gap:4px; padding:5px 10px 4px;
+  border-bottom:1px solid rgba(180,120,20,0.15);
+  background:rgba(200,150,42,0.04);
+}
+.mode-btn {
+  flex:1; padding:3px 2px; font-size:11px; border-radius:8px;
+  border:1.5px solid transparent; background:none; cursor:pointer;
+  color:#8a6010; font-family:inherit; letter-spacing:0.5px;
+  transition:background 0.15s, border-color 0.15s;
+}
+.mode-btn:hover { background:rgba(200,150,42,0.12); }
+.mode-btn.active {
+  background:rgba(200,150,42,0.22); border-color:#c8962a; color:#6a3e00; font-weight:bold;
+}
+
+/* チャットパネル内 波形（小） */
+#waveform {
+  display:none; align-items:center; justify-content:center;
+  gap:3px; height:36px; padding:0 10px;
+  border-top:1px solid rgba(180,120,20,0.15);
+}
+#waveform.show { display:flex; }
+.wv {
+  width:3px; background:#e04040; border-radius:3px; height:4px;
+  animation:wvani 0.7s ease-in-out infinite;
+}
+.wv:nth-child(1){animation-delay:0s;}   .wv:nth-child(2){animation-delay:0.08s;}
+.wv:nth-child(3){animation-delay:0.16s;} .wv:nth-child(4){animation-delay:0.24s;}
+.wv:nth-child(5){animation-delay:0.32s;} .wv:nth-child(6){animation-delay:0.40s;}
+.wv:nth-child(7){animation-delay:0.48s;} .wv:nth-child(8){animation-delay:0.56s;}
+.wv:nth-child(9){animation-delay:0.40s;} .wv:nth-child(10){animation-delay:0.32s;}
+.wv:nth-child(11){animation-delay:0.24s;}.wv:nth-child(12){animation-delay:0.16s;}
+@keyframes wvani { 0%,100%{height:3px;opacity:0.5;} 50%{height:22px;opacity:1;} }
+#waveform.processing .wv { background:#c8962a; animation:wvani 1.2s ease-in-out infinite; }
+
+/* ══ ボイスUI（PTT/ボイスモード専用オーバーレイ） ══ */
+#voice-ui {
+  display:none;
+  position:fixed;
+  flex-direction:column; align-items:center; gap:10px;
+  z-index:1100;
+}
+#voice-ui.show { display:flex; }
+
+/* グリップ（ドラッグハンドル） */
+#voice-grip {
+  width:60px; height:16px; cursor:grab;
+  display:flex; align-items:center; justify-content:center;
+}
+#voice-grip:active { cursor:grabbing; }
+#voice-grip::before {
+  content:''; width:36px; height:3px;
+  background:rgba(200,150,42,0.4); border-radius:2px;
+}
+
+/* 大きな録音ボタン */
+#big-mic-btn {
+  width:88px; height:88px; border-radius:50%;
+  background:rgba(30,18,4,0.82);
+  border:2.5px solid rgba(200,150,42,0.6);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:4px; cursor:pointer; user-select:none;
+  box-shadow:0 4px 20px rgba(0,0,0,0.5);
+  transition:background 0.15s, border-color 0.15s, transform 0.1s;
+}
+#big-mic-btn:hover { background:rgba(50,30,6,0.9); border-color:#c8962a; }
+#big-mic-btn:active { transform:scale(0.94); }
+#big-mic-btn.recording {
+  background:rgba(180,30,30,0.9); border-color:#e04040;
+  box-shadow:0 0 20px rgba(224,64,64,0.6);
+  animation:mpulse 0.7s infinite;
+}
+#big-mic-btn.processing {
+  background:rgba(140,100,10,0.85); border-color:#e8b840;
+  animation:mpulse 1.0s infinite;
+}
+#big-mic-icon { font-size:30px; line-height:1; }
+#big-mic-label { font-size:9px; color:rgba(220,180,80,0.85); letter-spacing:1px; }
+
+/* 大ボタン下の波形 */
+#big-waveform {
+  display:flex; gap:3px; align-items:center;
+  height:28px; opacity:0; transition:opacity 0.3s;
+}
+#big-waveform.show { opacity:1; }
+.bwv {
+  width:4px; background:#e04040; border-radius:3px; height:3px;
+  animation:wvani 0.7s ease-in-out infinite;
+}
+.bwv:nth-child(1){animation-delay:0s;}  .bwv:nth-child(2){animation-delay:0.1s;}
+.bwv:nth-child(3){animation-delay:0.2s;} .bwv:nth-child(4){animation-delay:0.3s;}
+.bwv:nth-child(5){animation-delay:0.4s;} .bwv:nth-child(6){animation-delay:0.3s;}
+.bwv:nth-child(7){animation-delay:0.2s;} .bwv:nth-child(8){animation-delay:0.1s;}
+#big-waveform.processing .bwv { background:#e8b840; animation:wvani 1.2s ease-in-out infinite; }
+
+/* モード表示ラベル＆チャット切り替えボタン */
+#voice-info {
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+}
+#voice-mode-label {
+  font-size:9px; color:rgba(200,150,42,0.7); letter-spacing:1.5px;
+  text-shadow:0 1px 4px rgba(0,0,0,0.8);
+}
+#voice-to-chat {
+  font-size:9px; color:rgba(180,130,40,0.6); cursor:pointer;
+  background:rgba(0,0,0,0.4); border:1px solid rgba(200,150,42,0.3);
+  border-radius:10px; padding:2px 10px; letter-spacing:0.8px;
+  transition:background 0.15s, color 0.15s;
+}
+#voice-to-chat:hover { background:rgba(200,150,42,0.2); color:#c8962a; }
+
 /* メモタブ */
 #memo-area {
   flex:1; min-height:240px; resize:none;
@@ -242,20 +355,49 @@ html, body {
     <span id="panel-close" onclick="closePanel()">✕</span>
   </div>
   <div id="auto-close-bar"><div id="auto-close-progress"></div></div>
+  <div id="mode-bar">
+    <button class="mode-btn active" id="mode-chat"  onclick="setMode('chat')">💬 チャット</button>
+    <button class="mode-btn"        id="mode-ptt"   onclick="setMode('ptt')">🎤 PTT</button>
+    <button class="mode-btn"        id="mode-voice" onclick="setMode('voice')">🎙️ ボイス</button>
+  </div>
   <div id="panel-tabs">
-    <button class="tab-btn active" onclick="switchTab('chat')">💬 チャット</button>
+    <button class="tab-btn active" onclick="switchTab('chat')">会話</button>
     <button class="tab-btn"        onclick="switchTab('memo')">📝 メモ</button>
   </div>
   <div id="tab-chat" class="tab-content active">
     <div id="chat-log"></div>
+    <div id="waveform">
+      <div class="wv"></div><div class="wv"></div><div class="wv"></div>
+      <div class="wv"></div><div class="wv"></div><div class="wv"></div>
+      <div class="wv"></div><div class="wv"></div><div class="wv"></div>
+      <div class="wv"></div><div class="wv"></div><div class="wv"></div>
+    </div>
     <div id="input-area">
       <input id="text-input" type="text" placeholder="FF11について何でも...">
-      <div id="mic-btn" title="押して話す（プッシュトゥトーク）">🎤</div>
+      <div id="mic-btn">🎤</div>
       <div id="send-btn" onclick="sendText()">▶</div>
     </div>
   </div>
   <div id="tab-memo" class="tab-content">
     <textarea id="memo-area" placeholder="FF11メモをここに書いておこう…"></textarea>
+  </div>
+</div>
+
+<!-- ── ボイスUI（PTT/ボイスモード） ── -->
+<div id="voice-ui">
+  <div id="voice-grip"></div>
+  <div id="big-waveform">
+    <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
+    <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
+    <div class="bwv"></div><div class="bwv"></div>
+  </div>
+  <div id="big-mic-btn">
+    <div id="big-mic-icon">🎤</div>
+    <div id="big-mic-label">TAP</div>
+  </div>
+  <div id="voice-info">
+    <div id="voice-mode-label">VOICE MODE</div>
+    <div id="voice-to-chat" onclick="setMode('chat')">💬 チャットを見る</div>
   </div>
 </div>
 
@@ -432,27 +574,115 @@ textInput.addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendText(); }
 });
 
-// ── プッシュトゥトーク ────────────────────────────────────────
-let micActive = false;
+// ══════════════════════════════════════════════════
+//  モード管理
+// ══════════════════════════════════════════════════
+let currentMode = 'chat';
+let micActive   = false;
+const waveform    = document.getElementById('waveform');
+const voiceUi     = document.getElementById('voice-ui');
+const bigMicBtn   = document.getElementById('big-mic-btn');
+const bigMicIcon  = document.getElementById('big-mic-icon');
+const bigMicLabel = document.getElementById('big-mic-label');
+const bigWaveform = document.getElementById('big-waveform');
+const voiceModeLabel = document.getElementById('voice-mode-label');
+
+function setMode(mode){
+  if(micActive) cancelMic();
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-'+mode).classList.add('active');
+
+  if(mode === 'chat'){
+    // チャット：パネルそのまま、voice-ui非表示
+    voiceUi.classList.remove('show');
+    document.getElementById('input-area').style.display = 'flex';
+    micBtn.style.display  = 'none';
+    document.getElementById('send-btn').style.display = 'flex';
+    waveform.classList.remove('show');
+    openPanel();
+  } else {
+    // PTT / ボイス：voice-ui表示、パネル閉じる
+    voiceUi.classList.add('show');
+    closePanel();
+    if(mode === 'ptt'){
+      bigMicIcon.textContent  = '🎤';
+      bigMicLabel.textContent = 'HOLD';
+      voiceModeLabel.textContent = 'PTT MODE — 押してる間録音';
+    } else {
+      bigMicIcon.textContent  = '🎙️';
+      bigMicLabel.textContent = 'TAP';
+      voiceModeLabel.textContent = 'VOICE MODE — タップして話す';
+    }
+  }
+  localStorage.setItem('mia_mode', mode);
+}
+
+function cancelMic(){
+  if(!micActive) return;
+  if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({cmd:'mic_stop'}));
+  micSetState('idle');
+}
+
+// ── マイク状態（小ボタン＋大ボタン共通） ──────────────────────
 function micSetState(state){
+  // 小ボタン（チャットパネル内）
   micBtn.classList.remove('recording','processing');
   micDot.classList.remove('recording');
-  if(state==='recording'){ micBtn.classList.add('recording'); micDot.classList.add('recording'); }
-  if(state==='processing'){ micBtn.classList.add('processing'); }
+  waveform.classList.remove('show','processing');
+  // 大ボタン（voice-ui）
+  bigMicBtn.classList.remove('recording','processing');
+  bigWaveform.classList.remove('show','processing');
+
+  if(state === 'recording'){
+    micBtn.classList.add('recording');
+    micDot.classList.add('recording');
+    waveform.classList.add('show');
+    bigMicBtn.classList.add('recording');
+    bigWaveform.classList.add('show');
+    bigMicLabel.textContent = currentMode==='ptt' ? 'REC...' : 'REC...';
+    micActive = true;
+  }
+  if(state === 'processing'){
+    micBtn.classList.add('processing');
+    waveform.classList.add('show','processing');
+    bigMicBtn.classList.add('processing');
+    bigWaveform.classList.add('show','processing');
+    bigMicLabel.textContent = '...';
+    micActive = false;
+  }
+  if(state === 'idle'){
+    bigMicLabel.textContent = currentMode==='ptt' ? 'HOLD' : 'TAP';
+    micActive = false;
+  }
 }
-micBtn.addEventListener('mousedown', e=>{
+
+// ── 大ボタン PTT ────────────────────────────────────────────
+bigMicBtn.addEventListener('mousedown', e=>{
   e.preventDefault();
-  if(!ws || ws.readyState!==WebSocket.OPEN) return;
-  micActive = true;
+  if(currentMode !== 'ptt' || !ws || ws.readyState!==WebSocket.OPEN) return;
   micSetState('recording');
   ws.send(JSON.stringify({cmd:'mic_start'}));
 });
 document.addEventListener('mouseup', ()=>{
-  if(!micActive) return;
-  micActive = false;
+  if(currentMode !== 'ptt' || !micActive) return;
   if(!ws || ws.readyState!==WebSocket.OPEN){ micSetState('idle'); return; }
   ws.send(JSON.stringify({cmd:'mic_stop'}));
+  micSetState('processing');
 });
+
+// ── 大ボタン ボイス（1クリック→VAD）─────────────────────────
+bigMicBtn.addEventListener('click', e=>{
+  if(currentMode !== 'voice') return;
+  e.preventDefault();
+  if(!ws || ws.readyState!==WebSocket.OPEN) return;
+  if(micActive){ cancelMic(); return; }
+  micSetState('recording');
+  ws.send(JSON.stringify({cmd:'mic_start'}));
+});
+
+// 起動時にモード復元
+(()=>{ const m = localStorage.getItem('mia_mode') || 'chat'; setMode(m); })();
 
 // ══════════════════════════════════════════════════
 //  WebSocket
@@ -484,7 +714,9 @@ function handleCmd(d){
       if(d.text){
         textInput.value = d.text;
         textInput.style.color = '#c8962a';
-        setTimeout(()=>{ textInput.value=''; textInput.style.color=''; }, 2000);
+        setTimeout(()=>{ textInput.value=''; textInput.style.color=''; }, 1500);
+        // チャットモード以外はサーバー側で自動送信済み
+        // チャットモードの場合は手動送信（ただしチャットモードにマイクはない）
       }
       break;
   }
@@ -541,8 +773,14 @@ makeDraggable(panel, document.getElementById('panel-header'), 'panel', {
 });
 makeZoomable(panel, 'panel', 'top left');
 
+// ── ボイスUI ──────────────────────────────────────
+const voiceGrip = document.getElementById('voice-grip');
+makeDraggable(voiceUi, voiceGrip, 'voice_ui', {
+  x: 12, y: window.innerHeight - 300
+});
+
 // ══════════════════════════════════════════════════
-//  ミア — ドラッグ(デスクトップ窓移動) + ズーム + クリックでパネル
+//  ミア — ドラッグ(デスクトップ窓移動 or ブラウザ内移動) + ズーム + クリック
 // ══════════════════════════════════════════════════
 window._desktopMode = false;
 const container    = document.getElementById('container');
@@ -551,12 +789,14 @@ const mainArea     = document.getElementById('main-area');
 const resizeHandle = document.getElementById('resize-handle');
 
 makeZoomable(mainArea, 'mia', 'bottom center');
+localStorage.removeItem('mia_cx'); localStorage.removeItem('mia_cy');
 
 // ドラッグ vs クリック判定
 let miaDragDist=0, miaDragLX=0, miaDragLY=0, miaDragging=false;
 
 catArea.addEventListener('mousedown', e=>{
-  miaDragging=true; miaDragDist=0; miaDragLX=e.screenX; miaDragLY=e.screenY;
+  miaDragging=true; miaDragDist=0;
+  miaDragLX=e.screenX; miaDragLY=e.screenY;
   e.preventDefault();
 });
 document.addEventListener('mousemove', e=>{
@@ -564,8 +804,22 @@ document.addEventListener('mousemove', e=>{
   const dx=e.screenX-miaDragLX, dy=e.screenY-miaDragLY;
   miaDragDist += Math.hypot(dx, dy);
   miaDragLX=e.screenX; miaDragLY=e.screenY;
-  if(miaDragDist>4 && window._desktopMode && window.pywebview?.api?.move_delta)
-    pywebview.api.move_delta(dx, dy);
+  if(miaDragDist > 4){
+    if(window._desktopMode && window.pywebview?.api?.move_delta){
+      pywebview.api.move_delta(dx, dy);
+    } else {
+      // ブラウザモード: 初回ドラッグで bottom/right → left/top に切り替え
+      if(!container.style.left || container.style.left === 'auto'){
+        const r = container.getBoundingClientRect();
+        container.style.bottom = 'auto'; container.style.right = 'auto';
+        container.style.left = r.left+'px'; container.style.top = r.top+'px';
+      }
+      const nx = container.offsetLeft + dx;
+      const ny = container.offsetTop  + dy;
+      container.style.left = nx+'px'; container.style.top = ny+'px';
+      localStorage.setItem('mia_cx', nx); localStorage.setItem('mia_cy', ny);
+    }
+  }
 });
 document.addEventListener('mouseup', e=>{
   if(!miaDragging) return;
