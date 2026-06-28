@@ -23,6 +23,13 @@ WS_EX_LAYERED     = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 WH_MOUSE_LL       = 14
 
+# 64-bit Windows 対応: LRESULT / LPARAM / WPARAM は pointer サイズ
+_IS64 = ctypes.sizeof(ctypes.c_void_p) == 8
+_LRESULT  = ctypes.c_longlong  if _IS64 else ctypes.c_long
+_LPARAM   = ctypes.c_longlong  if _IS64 else ctypes.c_long
+_WPARAM   = ctypes.c_ulonglong if _IS64 else ctypes.c_ulong
+_ULONG_PTR = ctypes.c_uint64  if _IS64 else ctypes.c_uint32
+
 _hwnd           = None
 _clickthrough   = False
 _rect_lock      = threading.Lock()
@@ -38,18 +45,28 @@ class _MSLLHOOKSTRUCT(ctypes.Structure):
         ("mouseData",   wt.DWORD),
         ("flags",       wt.DWORD),
         ("time",        wt.DWORD),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", _ULONG_PTR),
     ]
+
+# Win32 API に正しい型を設定
+_u32 = ctypes.windll.user32
+if _IS64:
+    _u32.GetWindowLongPtrW.restype  = _LRESULT
+    _u32.SetWindowLongPtrW.restype  = _LRESULT
+    _GetWndLong = _u32.GetWindowLongPtrW
+    _SetWndLong = _u32.SetWindowLongPtrW
+else:
+    _GetWndLong = _u32.GetWindowLongW
+    _SetWndLong = _u32.SetWindowLongW
+_u32.CallNextHookEx.restype  = _LRESULT
+_u32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, _WPARAM, _LPARAM]
 
 def _set_transparent(enable: bool):
     if not _hwnd:
         return
-    style = ctypes.windll.user32.GetWindowLongW(_hwnd, GWL_EXSTYLE)
-    if enable:
-        style |= WS_EX_TRANSPARENT
-    else:
-        style &= ~WS_EX_TRANSPARENT
-    ctypes.windll.user32.SetWindowLongW(_hwnd, GWL_EXSTYLE, style)
+    style = _GetWndLong(_hwnd, GWL_EXSTYLE)
+    style = (style | WS_EX_TRANSPARENT) if enable else (style & ~WS_EX_TRANSPARENT)
+    _SetWndLong(_hwnd, GWL_EXSTYLE, style)
 
 def _mouse_hook_proc(nCode, wParam, lParam):
     global _clickthrough
@@ -66,23 +83,23 @@ def _mouse_hook_proc(nCode, wParam, lParam):
             elif not over and not _clickthrough:
                 _set_transparent(True)
                 _clickthrough = True
-    return ctypes.windll.user32.CallNextHookEx(_hook_handle, nCode, wParam, lParam)
+    return _u32.CallNextHookEx(_hook_handle, nCode, wParam, lParam)
 
-_HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, wt.LPARAM)
+_HOOKPROC = ctypes.WINFUNCTYPE(_LRESULT, ctypes.c_int, _WPARAM, _LPARAM)
 _hook_cb  = _HOOKPROC(_mouse_hook_proc)
 
 def _run_hook():
     global _hook_handle
-    _hook_handle = ctypes.windll.user32.SetWindowsHookExW(WH_MOUSE_LL, _hook_cb, None, 0)
+    _hook_handle = _u32.SetWindowsHookExW(WH_MOUSE_LL, _hook_cb, None, 0)
     if not _hook_handle:
         print("[WND] フック設定失敗")
         return
     print("[WND] マウスフック開始")
     msg = wt.MSG()
-    while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-        ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
-        ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
-    ctypes.windll.user32.UnhookWindowsHookEx(_hook_handle)
+    while _u32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+        _u32.TranslateMessage(ctypes.byref(msg))
+        _u32.DispatchMessageW(ctypes.byref(msg))
+    _u32.UnhookWindowsHookEx(_hook_handle)
 
 def _find_hwnd_and_start_hook():
     """プロセスの最大可視ウィンドウを HWND として取得し、フックを開始する"""

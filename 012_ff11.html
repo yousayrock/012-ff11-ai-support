@@ -86,6 +86,12 @@ html, body {
 #mic-dot.recording{ background:#e04040; animation:mpulse 0.6s infinite; }
 @keyframes mpulse { 0%,100%{opacity:0.6;} 50%{opacity:1;} }
 
+#panel-mic-gear {
+  font-size:11px; color:rgba(140,96,16,0.4);
+  cursor:pointer; padding:2px 3px; flex-shrink:0;
+  transition:color 0.15s;
+}
+#panel-mic-gear:hover { color:#c8962a; }
 #panel-close {
   margin-left:auto; font-size:12px; color:rgba(100,70,20,0.5);
   cursor:pointer; padding:2px 4px; flex-shrink:0;
@@ -285,10 +291,10 @@ html, body {
 }
 #mic-select-btn:hover { background:rgba(200,150,42,0.3); color:#c8962a; }
 #mic-device-menu {
-  display:none; position:absolute; top:28px; right:0;
+  display:none; position:fixed;
   background:rgba(18,10,2,0.97); border:1px solid rgba(200,150,42,0.4);
   border-radius:8px; padding:4px; min-width:200px; max-width:280px;
-  z-index:1300; box-shadow:0 4px 16px rgba(0,0,0,0.6);
+  z-index:1400; box-shadow:0 4px 16px rgba(0,0,0,0.6);
 }
 #mic-device-menu.show { display:block; }
 .mic-device-item {
@@ -367,6 +373,8 @@ html, body {
 </style>
 </head>
 <body>
+<!-- マイクデバイス選択メニュー（body直下 position:fixed） -->
+<div id="mic-device-menu"></div>
 
 <!-- ── 字幕テロップバー ── -->
 <div id="telop-bar">
@@ -379,6 +387,7 @@ html, body {
   <div id="panel-header">
     <span class="title">◈ FF11 MIA</span>
     <div id="mic-dot"></div>
+    <span id="panel-mic-gear" title="マイク選択">⚙</span>
     <span id="panel-close" onclick="closePanel()">✕</span>
   </div>
   <div id="auto-close-bar"><div id="auto-close-progress"></div></div>
@@ -414,7 +423,6 @@ html, body {
 <div id="voice-ui">
   <div id="voice-grip"></div>
   <button id="mic-select-btn" title="マイク選択">⚙</button>
-  <div id="mic-device-menu"></div>
   <div id="big-waveform">
     <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
     <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
@@ -773,14 +781,23 @@ const micSelectBtn  = document.getElementById('mic-select-btn');
 const micDeviceMenu = document.getElementById('mic-device-menu');
 let micMenuOpen = false;
 
-micSelectBtn.addEventListener('click', e=>{
+let _micMenuAnchor = null;  // メニューを開いたボタンの座標
+
+function openMicMenu(e) {
   e.stopPropagation();
   if(micMenuOpen){
     micDeviceMenu.classList.remove('show'); micMenuOpen=false;
   } else {
+    const r = e.currentTarget.getBoundingClientRect();
+    _micMenuAnchor = { x: r.left, y: r.bottom + 4 };
     if(ws?.readyState===WebSocket.OPEN) ws.send(JSON.stringify({cmd:'get_mic_devices'}));
   }
-});
+}
+micSelectBtn.addEventListener('click', openMicMenu);
+
+// パネルヘッダーの⚙ボタン（チャットモードでも操作可能）
+const panelMicGear = document.getElementById('panel-mic-gear');
+panelMicGear.addEventListener('click', openMicMenu);
 
 document.addEventListener('click', ()=>{
   micDeviceMenu.classList.remove('show'); micMenuOpen=false;
@@ -808,6 +825,13 @@ function showMicDeviceMenu(devices, current){
     micDeviceMenu.appendChild(item);
   });
 
+  // ボタン座標を基準に表示位置を決定
+  if(_micMenuAnchor) {
+    const vw = window.innerWidth, mw = 210;
+    const left = Math.min(_micMenuAnchor.x, vw - mw - 8);
+    micDeviceMenu.style.left = left + 'px';
+    micDeviceMenu.style.top  = _micMenuAnchor.y + 'px';
+  }
   micDeviceMenu.classList.add('show'); micMenuOpen=true;
 }
 
