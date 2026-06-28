@@ -938,7 +938,37 @@ document.addEventListener('mouseup', ()=>{
   if(!resizing) return;
   resizing=false; document.body.style.cursor='';
   localStorage.setItem('mia_w', container.offsetWidth);
+  updateClickthroughRects();
 });
+
+// ══════════════════════════════════════════════════
+//  デスクトップモード — クリックスルー領域通知
+// ══════════════════════════════════════════════════
+function updateClickthroughRects() {
+  if (!window._desktopMode || !window.pywebview?.api?.update_rects) return;
+  const wx = window.screenLeft ?? window.screenX ?? 0;
+  const wy = window.screenTop  ?? window.screenY ?? 0;
+  const ids = ['container', 'panel', 'telop-bar', 'voice-ui'];
+  const rects = [];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const st = window.getComputedStyle(el);
+    if (st.display === 'none' || st.visibility === 'hidden') continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    rects.push({
+      l: Math.floor(wx + r.left),
+      t: Math.floor(wy + r.top),
+      r: Math.ceil(wx + r.right),
+      b: Math.ceil(wy + r.bottom)
+    });
+  }
+  window.pywebview.api.update_rects(JSON.stringify(rects));
+}
+
+// 300ms ごとに更新（ドラッグ中もリアルタイムに追従）
+setInterval(updateClickthroughRects, 300);
 </script>
 </body>
 </html>

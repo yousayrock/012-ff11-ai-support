@@ -1,11 +1,10 @@
 """
 012号 FF11アシスタントくん — デスクトップキャラクターランチャー
 透過・フレームレス・常時最前面の小窓でみっぴを表示する。
-OBS不要。pip install pywebview で動く。
-
-起動: python 012_desktop.py
+透明部分はクリックスルー、キャラ・パネル部分は通常クリック可能。
 """
-import sys, os, time, subprocess, ctypes, threading
+import sys, os, time, subprocess, ctypes, threading, json
+import ctypes.wintypes as wt
 from pathlib import Path
 
 try:
@@ -18,13 +17,120 @@ WIN_W  = 560
 WIN_H  = 520
 SERVER = Path(__file__).parent / "012_server.py"
 
+# ── Win32 クリックスルー制御 ───────────────────────────────────────────────────
+GWL_EXSTYLE       = -20
+WS_EX_LAYERED     = 0x00080000
+WS_EX_TRANSPARENT = 0x00000020
+WH_MOUSE_LL       = 14
+
+_hwnd           = None
+_clickthrough   = False
+_rect_lock      = threading.Lock()
+_interactive_rects: list = []   # [{l,t,r,b}, ...]
+_hook_handle    = None
+
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+class _MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("pt",          _POINT),
+        ("mouseData",   wt.DWORD),
+        ("flags",       wt.DWORD),
+        ("time",        wt.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+def _set_transparent(enable: bool):
+    if not _hwnd:
+        return
+    style = ctypes.windll.user32.GetWindowLongW(_hwnd, GWL_EXSTYLE)
+    if enable:
+        style |= WS_EX_TRANSPARENT
+    else:
+        style &= ~WS_EX_TRANSPARENT
+    ctypes.windll.user32.SetWindowLongW(_hwnd, GWL_EXSTYLE, style)
+
+def _mouse_hook_proc(nCode, wParam, lParam):
+    global _clickthrough
+    if nCode >= 0 and _hwnd:
+        pt = ctypes.cast(lParam, ctypes.POINTER(_MSLLHOOKSTRUCT)).contents.pt
+        x, y = pt.x, pt.y
+        with _rect_lock:
+            rects = list(_interactive_rects)
+        if rects:
+            over = any(r['l'] <= x <= r['r'] and r['t'] <= y <= r['b'] for r in rects)
+            if over and _clickthrough:
+                _set_transparent(False)
+                _clickthrough = False
+            elif not over and not _clickthrough:
+                _set_transparent(True)
+                _clickthrough = True
+    return ctypes.windll.user32.CallNextHookEx(_hook_handle, nCode, wParam, lParam)
+
+_HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, wt.LPARAM)
+_hook_cb  = _HOOKPROC(_mouse_hook_proc)
+
+def _run_hook():
+    global _hook_handle
+    _hook_handle = ctypes.windll.user32.SetWindowsHookExW(WH_MOUSE_LL, _hook_cb, None, 0)
+    if not _hook_handle:
+        print("[WND] フック設定失敗")
+        return
+    print("[WND] マウスフック開始")
+    msg = wt.MSG()
+    while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+        ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
+        ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+    ctypes.windll.user32.UnhookWindowsHookEx(_hook_handle)
+
+def _find_hwnd_and_start_hook():
+    """プロセスの最大可視ウィンドウを HWND として取得し、フックを開始する"""
+    global _hwnd
+    time.sleep(0.3)  # ウィンドウが確実に表示されるまで待つ
+    our_pid = os.getpid()
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wt.HWND, wt.LPARAM)
+    candidates = []
+
+    def _enum_cb(hwnd, _):
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return True
+        pid = wt.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == our_pid:
+            r = wt.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(r))
+            area = max(0, r.right - r.left) * max(0, r.bottom - r.top)
+            if area > 0:
+                candidates.append((hwnd, area))
+        return True
+
+    cb = WNDENUMPROC(_enum_cb)
+    ctypes.windll.user32.EnumWindows(cb, 0)
+
+    if candidates:
+        _hwnd = max(candidates, key=lambda x: x[1])[0]
+        print(f"[WND] HWND=0x{_hwnd:08X}")
+        # WS_EX_LAYERED が確実に設定されていることを確認
+        style = ctypes.windll.user32.GetWindowLongW(_hwnd, GWL_EXSTYLE)
+        style |= WS_EX_LAYERED
+        ctypes.windll.user32.SetWindowLongW(_hwnd, GWL_EXSTYLE, style)
+        _run_hook()  # ブロッキング（メッセージループ）
+    else:
+        print("[WND] ウィンドウ未検出、クリックスルー無効")
+
+def update_rects(rects_json: str):
+    """JS から呼ばれる: インタラクティブ領域(スクリーン座標)の更新"""
+    with _rect_lock:
+        try:
+            _interactive_rects.clear()
+            _interactive_rects.extend(json.loads(rects_json))
+        except Exception:
+            pass
+
 # ── スクリーン右下に配置 ──────────────────────────────────────────────────────
 def screen_bottom_right():
     try:
-        u32 = ctypes.windll.user32
-        sw  = u32.GetSystemMetrics(0)
-        sh  = u32.GetSystemMetrics(1)
-        # 作業領域（タスクバーを除いた高さ）を取得
         class RECT(ctypes.Structure):
             _fields_ = [("left",ctypes.c_long),("top",ctypes.c_long),
                         ("right",ctypes.c_long),("bottom",ctypes.c_long)]
@@ -70,17 +176,16 @@ def main():
 
     x, y   = screen_bottom_right()
     window = webview.create_window(
-        title            = "",
-        url              = "http://127.0.0.1:8012/",
-        x                = x,
-        y                = y,
-        width            = WIN_W,
-        height           = WIN_H,
-        transparent      = True,
-        frameless        = True,
-        on_top           = True,
-        min_size         = (160, 160),
-        background_color = "#000000",
+        title       = "",
+        url         = "http://127.0.0.1:8012/",
+        x           = x,
+        y           = y,
+        width       = WIN_W,
+        height      = WIN_H,
+        transparent = True,
+        frameless   = True,
+        on_top      = True,
+        min_size    = (160, 160),
     )
 
     win_pos  = [x, y]
@@ -102,13 +207,13 @@ def main():
             "document.documentElement.style.background='transparent';"
             "document.body.style.background='transparent';"
         )
+        threading.Thread(target=_find_hwnd_and_start_hook, daemon=True).start()
 
     window.events.loaded += on_loaded
-    window.expose(move_delta, set_size)
+    window.expose(move_delta, set_size, update_rects)
 
     webview.start(debug=False)
 
-    # ウィンドウが閉じたらサーバーも停止
     if _server_proc:
         _server_proc.terminate()
         print("[012] サーバー停止")
