@@ -924,20 +924,16 @@ document.addEventListener('mousemove', e=>{
   miaDragDist += Math.hypot(dx, dy);
   miaDragLX=e.screenX; miaDragLY=e.screenY;
   if(miaDragDist > 4){
-    if(window._desktopMode && window.pywebview?.api?.move_delta){
-      pywebview.api.move_delta(dx, dy);
-    } else {
-      // ブラウザモード: 初回ドラッグで bottom/right → left/top に切り替え
-      if(!container.style.left || container.style.left === 'auto'){
-        const r = container.getBoundingClientRect();
-        container.style.bottom = 'auto'; container.style.right = 'auto';
-        container.style.left = r.left+'px'; container.style.top = r.top+'px';
-      }
-      const nx = container.offsetLeft + dx;
-      const ny = container.offsetTop  + dy;
-      container.style.left = nx+'px'; container.style.top = ny+'px';
-      localStorage.setItem('mia_cx', nx); localStorage.setItem('mia_cy', ny);
+    // 初回ドラッグで bottom/right → left/top に切り替え
+    if(!container.style.left || container.style.left === 'auto'){
+      const r = container.getBoundingClientRect();
+      container.style.bottom = 'auto'; container.style.right = 'auto';
+      container.style.left = r.left+'px'; container.style.top = r.top+'px';
     }
+    const nx = container.offsetLeft + dx;
+    const ny = container.offsetTop  + dy;
+    container.style.left = nx+'px'; container.style.top = ny+'px';
+    localStorage.setItem('mia_cx', nx); localStorage.setItem('mia_cy', ny);
   }
 });
 document.addEventListener('mouseup', e=>{

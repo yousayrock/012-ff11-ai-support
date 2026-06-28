@@ -13,9 +13,13 @@ except ImportError:
     print("pywebview が必要です: pip install pywebview")
     sys.exit(1)
 
-WIN_W  = 560
-WIN_H  = 520
 SERVER = Path(__file__).parent / "012_server.py"
+
+def _screen_size():
+    u = ctypes.windll.user32
+    return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+
+SCREEN_W, SCREEN_H = _screen_size()
 
 # ── Win32 クリックスルー制御 ───────────────────────────────────────────────────
 GWL_EXSTYLE       = -20
@@ -145,18 +149,6 @@ def update_rects(rects_json: str):
         except Exception:
             pass
 
-# ── スクリーン右下に配置 ──────────────────────────────────────────────────────
-def screen_bottom_right():
-    try:
-        class RECT(ctypes.Structure):
-            _fields_ = [("left",ctypes.c_long),("top",ctypes.c_long),
-                        ("right",ctypes.c_long),("bottom",ctypes.c_long)]
-        r = RECT()
-        ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(r), 0)
-        return r.right - WIN_W - 16, r.bottom - WIN_H - 8
-    except Exception:
-        return 1200, 400
-
 # ── サーバー起動 ────────────────────────────────────────────────────────────────
 _server_proc = None
 
@@ -191,32 +183,18 @@ def main():
 
     print("[012] サーバー準備完了。ウィンドウを表示します。")
 
-    x, y   = screen_bottom_right()
     window = webview.create_window(
         title       = "",
         url         = "http://127.0.0.1:8012/",
-        x           = x,
-        y           = y,
-        width       = WIN_W,
-        height      = WIN_H,
+        x           = 0,
+        y           = 0,
+        width       = SCREEN_W,
+        height      = SCREEN_H,
         transparent = True,
         frameless   = True,
         on_top      = True,
         min_size    = (160, 160),
     )
-
-    win_pos  = [x, y]
-    win_size = [WIN_W, WIN_H]
-
-    def move_delta(dx, dy):
-        win_pos[0] = max(0, win_pos[0] + int(dx))
-        win_pos[1] = max(0, win_pos[1] + int(dy))
-        window.move(win_pos[0], win_pos[1])
-
-    def set_size(w, h):
-        win_size[0] = max(160, int(w))
-        win_size[1] = max(160, int(h))
-        window.resize(win_size[0], win_size[1])
 
     def on_loaded():
         window.evaluate_js(
@@ -227,7 +205,7 @@ def main():
         threading.Thread(target=_find_hwnd_and_start_hook, daemon=True).start()
 
     window.events.loaded += on_loaded
-    window.expose(move_delta, set_size, update_rects)
+    window.expose(update_rects)
 
     webview.start(debug=False)
 
