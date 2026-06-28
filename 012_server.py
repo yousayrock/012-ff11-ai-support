@@ -414,6 +414,7 @@ class FF11System:
         self._sd_lock         = threading.Lock()
         self._sd_rate: int    = SAMPLE_RATE
         self._sd_vad_stop     = threading.Event()  # VADセッション停止フラグ
+        self._mic_device_idx  = None               # None = システムデフォルト
 
     # ──────────────────────────────────────────────────────────────
     #  初期化
@@ -724,9 +725,22 @@ class FF11System:
                                     await self.browser_send({"cmd": "mic_state", "state": "idle"})
                             asyncio.ensure_future(_vad_task())
                         elif cmd == "mic_stop":
-                            # 録音中キャンセル
                             self._sd_vad_stop.set()
                             await self.browser_send({"cmd": "mic_state", "state": "idle"})
+                        elif cmd == "get_mic_devices":
+                            loop = asyncio.get_event_loop()
+                            devices = await loop.run_in_executor(None, self.get_mic_devices)
+                            await ws.send(json.dumps({
+                                "cmd": "mic_devices",
+                                "devices": devices,
+                                "current": self._mic_device_idx
+                            }, ensure_ascii=False))
+                        elif cmd == "set_mic_device":
+                            idx = d.get("index")  # None = デフォルト
+                            self._mic_device_idx = idx
+                            name = "デフォルト" if idx is None else next(
+                                (x["name"] for x in self.get_mic_devices() if x["index"] == idx), str(idx))
+                            print(f"[MIC] デバイス変更: {name}")
                     except Exception as e:
                         print(f"[WS] コマンド処理エラー: {e}")
             except Exception as e:
@@ -776,6 +790,24 @@ class FF11System:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     # ──────────────────────────────────────────────────────────────
+    #  マイクデバイス管理
+    # ──────────────────────────────────────────────────────────────
+
+    def get_mic_devices(self) -> list:
+        """使用可能なマイク一覧を返す。HFP（8000Hz）は除外。"""
+        if not SOUNDDEVICE_OK:
+            return []
+        devices = []
+        for i, d in enumerate(sd.query_devices()):
+            if d['max_input_channels'] < 1:
+                continue
+            rate = int(d['default_samplerate'])
+            if rate < 16000:  # Bluetooth HFP (8000Hz) を除外
+                continue
+            devices.append({"index": i, "name": d['name'], "rate": rate})
+        return devices
+
+    # ──────────────────────────────────────────────────────────────
     #  sounddevice VAD
     # ──────────────────────────────────────────────────────────────
 
@@ -796,21 +828,31 @@ class FF11System:
         chunk_q: "queue.Queue[np.ndarray]" = queue.Queue()
         self._sd_vad_stop.clear()
 
+        device_idx = self._mic_device_idx
         try:
-            dev_info    = sd.query_devices(sd.default.device[0])
+            dev_info    = sd.query_devices(device_idx)
             native_rate = int(dev_info['default_samplerate'])
         except Exception:
+            device_idx  = None
             native_rate = SAMPLE_RATE
 
         def _cb(indata, frames_count, time_info, status):
             chunk_q.put(indata.copy())
 
         stream = sd.InputStream(
+            device=device_idx,
             samplerate=native_rate, channels=1, dtype='float32',
             callback=_cb, blocksize=CHUNK_SIZE
         )
-        stream.start()
-        print(f"[MIC] VAD録音開始 ({native_rate}Hz) — 話し終わると自動送信")
+        try:
+            stream.start()
+        except Exception as e:
+            print(f"[MIC] デバイス起動失敗 (idx={device_idx}): {e} → デフォルトに切り替え")
+            stream.close()
+            self._mic_device_idx = None
+            return None
+        dev_name = sd.query_devices(device_idx)['name'] if device_idx is not None else 'デフォルト'
+        print(f"[MIC] VAD録音開始 ({native_rate}Hz) [{dev_name}] — 話し終わると自動送信")
 
         # キャリブレーション
         cal_chunks = int(CAL_SEC * native_rate / CHUNK_SIZE)

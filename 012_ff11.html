@@ -274,6 +274,33 @@ html, body {
 .bwv:nth-child(7){animation-delay:0.2s;} .bwv:nth-child(8){animation-delay:0.1s;}
 #big-waveform.processing .bwv { background:#e8b840; animation:wvani 1.2s ease-in-out infinite; }
 
+/* マイクデバイス選択 */
+#mic-select-btn {
+  position:absolute; top:4px; right:6px;
+  width:20px; height:20px; border-radius:50%;
+  background:rgba(200,150,42,0.1); border:1px solid rgba(200,150,42,0.25);
+  color:rgba(200,150,42,0.6); font-size:12px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:background 0.15s;
+}
+#mic-select-btn:hover { background:rgba(200,150,42,0.3); color:#c8962a; }
+#mic-device-menu {
+  display:none; position:absolute; top:28px; right:0;
+  background:rgba(18,10,2,0.97); border:1px solid rgba(200,150,42,0.4);
+  border-radius:8px; padding:4px; min-width:200px; max-width:280px;
+  z-index:1300; box-shadow:0 4px 16px rgba(0,0,0,0.6);
+}
+#mic-device-menu.show { display:block; }
+.mic-device-item {
+  padding:6px 10px; cursor:pointer; border-radius:5px;
+  color:rgba(220,180,80,0.8); font-size:11px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition:background 0.1s;
+}
+.mic-device-item:hover { background:rgba(200,150,42,0.2); }
+.mic-device-item.active { color:#c8962a; }
+.mic-device-item.active::before { content:'✓ '; }
+
 /* モード表示ラベル＆チャット切り替えボタン */
 #voice-info {
   display:flex; flex-direction:column; align-items:center; gap:5px;
@@ -386,6 +413,8 @@ html, body {
 <!-- ── ボイスUI（PTT/ボイスモード） ── -->
 <div id="voice-ui">
   <div id="voice-grip"></div>
+  <button id="mic-select-btn" title="マイク選択">⚙</button>
+  <div id="mic-device-menu"></div>
   <div id="big-waveform">
     <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
     <div class="bwv"></div><div class="bwv"></div><div class="bwv"></div>
@@ -699,7 +728,11 @@ bigMicBtn.addEventListener('click', e=>{
 let ws=null;
 function connectWS(){
   ws = new WebSocket('ws://127.0.0.1:9012');
-  ws.onopen  = ()=>micDot.classList.add('active');
+  ws.onopen  = ()=>{
+    micDot.classList.add('active');
+    const savedIdx = localStorage.getItem('mic_device_idx');
+    if(savedIdx !== null) ws.send(JSON.stringify({cmd:'set_mic_device', index:parseInt(savedIdx)}));
+  };
   ws.onclose = ()=>{ micDot.classList.remove('active','recording'); setTimeout(connectWS,3000); };
   ws.onerror = ()=>{};
   ws.onmessage = e=>{ try{ handleCmd(JSON.parse(e.data)); }catch{} };
@@ -724,13 +757,66 @@ function handleCmd(d){
         textInput.value = d.text;
         textInput.style.color = '#c8962a';
         setTimeout(()=>{ textInput.value=''; textInput.style.color=''; }, 1500);
-        // チャットモード以外はサーバー側で自動送信済み
-        // チャットモードの場合は手動送信（ただしチャットモードにマイクはない）
       }
+      break;
+    case 'mic_devices':
+      showMicDeviceMenu(d.devices, d.current);
       break;
   }
 }
 connectWS();
+
+// ══════════════════════════════════════════════════
+//  マイクデバイス選択
+// ══════════════════════════════════════════════════
+const micSelectBtn  = document.getElementById('mic-select-btn');
+const micDeviceMenu = document.getElementById('mic-device-menu');
+let micMenuOpen = false;
+
+micSelectBtn.addEventListener('click', e=>{
+  e.stopPropagation();
+  if(micMenuOpen){
+    micDeviceMenu.classList.remove('show'); micMenuOpen=false;
+  } else {
+    if(ws?.readyState===WebSocket.OPEN) ws.send(JSON.stringify({cmd:'get_mic_devices'}));
+  }
+});
+
+document.addEventListener('click', ()=>{
+  micDeviceMenu.classList.remove('show'); micMenuOpen=false;
+});
+
+function showMicDeviceMenu(devices, current){
+  const savedIdx = localStorage.getItem('mic_device_idx');
+  const activeIdx = current !== null && current !== undefined ? current
+                  : (savedIdx !== null ? parseInt(savedIdx) : null);
+  micDeviceMenu.innerHTML = '';
+
+  // デフォルト項目
+  const def = document.createElement('div');
+  def.className = 'mic-device-item' + (activeIdx===null?' active':'');
+  def.textContent = 'システムデフォルト';
+  def.onclick = ()=>applyMicDevice(null);
+  micDeviceMenu.appendChild(def);
+
+  devices.forEach(dev=>{
+    const item = document.createElement('div');
+    item.className = 'mic-device-item' + (activeIdx===dev.index?' active':'');
+    item.textContent = dev.name;
+    item.title = `${dev.name} (${dev.rate}Hz)`;
+    item.onclick = ()=>applyMicDevice(dev.index);
+    micDeviceMenu.appendChild(item);
+  });
+
+  micDeviceMenu.classList.add('show'); micMenuOpen=true;
+}
+
+function applyMicDevice(idx){
+  if(ws?.readyState===WebSocket.OPEN) ws.send(JSON.stringify({cmd:'set_mic_device', index:idx}));
+  if(idx===null) localStorage.removeItem('mic_device_idx');
+  else           localStorage.setItem('mic_device_idx', idx);
+  micDeviceMenu.classList.remove('show'); micMenuOpen=false;
+}
 
 // ══════════════════════════════════════════════════
 //  汎用ドラッグ・ズームユーティリティ
