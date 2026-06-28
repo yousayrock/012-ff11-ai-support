@@ -429,10 +429,17 @@ const STAMPS = {
   fight:'13_fight.png', doya:'14_doya.png', yay:'15_yay.png', matane:'16_matane.png'
 };
 
+const IDLE_STAMPS = ['yasumi','iine','doya','fight','ganbaru','ikou'];
+function randomIdleStamp() {
+  return STAMPS[IDLE_STAMPS[Math.floor(Math.random() * IDLE_STAMPS.length)]];
+}
+
 function setStamp(key, duration) {
   mippiImg.src = '/mia/' + (STAMPS[key] || STAMPS.yasumi);
   if (stampTimer) clearTimeout(stampTimer);
-  if (duration) stampTimer = setTimeout(()=>{ mippiImg.src='/mia/'+STAMPS.yasumi; }, duration);
+  if (duration) stampTimer = setTimeout(()=>{
+    if (!isTalking) mippiImg.src = '/mia/' + randomIdleStamp();
+  }, duration);
 }
 
 function autoStamp(t) {
@@ -460,7 +467,9 @@ function startTalking() {
   isTalking = true; wrap.classList.add('talking'); setStamp('nani');
 }
 function stopTalking() {
-  isTalking = false; wrap.classList.remove('talking'); setStamp('yasumi');
+  isTalking = false; wrap.classList.remove('talking');
+  if (stampTimer) clearTimeout(stampTimer); stampTimer = null;
+  mippiImg.src = '/mia/' + randomIdleStamp();
 }
 
 // ══════════════════════════════════════════════════

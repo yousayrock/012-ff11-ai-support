@@ -11,7 +11,7 @@ pygame>=2.5.0
 
 # マイク入力
 sounddevice>=0.4.6
-pyaudio>=0.2.14  # 任意・旧VAD用（なくても動く）
+# pyaudio は不要（sounddevice に移行済み。Python 3.14+ では wheel なし）
 
 # WebSocket サーバー（ブラウザとの通信）
 websockets>=12.0

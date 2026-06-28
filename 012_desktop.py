@@ -34,29 +34,6 @@ def screen_bottom_right():
     except Exception:
         return 1200, 400
 
-# ── JS ↔ Python ブリッジ（ドラッグ移動に使用） ─────────────────────────────────
-class API:
-    def __init__(self, win, x, y):
-        self._win = win
-        self._x   = x
-        self._y   = y
-
-    def move_delta(self, dx, dy):
-        """JS からドラッグ差分を受け取って窓を移動"""
-        self._x = max(0, self._x + int(dx))
-        self._y = max(0, self._y + int(dy))
-        self._win.move(self._x, self._y)
-
-    def resize(self, w, h):
-        """JS から窓サイズ変更（パネル開閉に応じて）"""
-        self._win.resize(int(w), int(h))
-
-    def minimize(self):
-        self._win.hide()
-
-    def restore(self):
-        self._win.show()
-
 # ── サーバー起動 ────────────────────────────────────────────────────────────────
 _server_proc = None
 
