@@ -18,6 +18,8 @@ COPY 012_server.py .
 COPY 012_ff11.html .
 COPY mia/ ./mia/
 
+ENV HTTP_HOST=0.0.0.0
+
 EXPOSE 8012 9012
 
 CMD ["python", "012_server.py"]

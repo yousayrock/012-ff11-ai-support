@@ -160,6 +160,7 @@ ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL_HAIKU         = "claude-haiku-4-5-20251001"   # 通常Q&A
 MODEL_SONNET        = "claude-sonnet-4-6"            # キャッシュ整理・複雑判断
 
+HTTP_HOST           = os.environ.get("HTTP_HOST", "127.0.0.1")  # Docker: 0.0.0.0
 HTTP_PORT           = 8012
 WS_PORT             = 9012   # mippi_main.py の 9001 と衝突しない
 
@@ -537,11 +538,9 @@ class FF11System:
 
     @staticmethod
     def _pygame_play(path: str):
-        """音声再生。毎回 mixer を再初期化してデフォルトデバイスを取得する。"""
         try:
-            if pygame.mixer.get_init():
-                pygame.mixer.quit()
-            pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
             pygame.mixer.music.load(path)
             pygame.mixer.music.play()
             while pygame.mixer.music.get_busy():
@@ -737,15 +736,16 @@ class FF11System:
                             # 録音中キャンセル
                             self._sd_vad_stop.set()
                             await self.browser_send({"cmd": "mic_state", "state": "idle"})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    except Exception as e:
+                        print(f"[WS] コマンド処理エラー: {e}")
+            except Exception as e:
+                if "ConnectionClosed" not in type(e).__name__:
+                    print(f"[WS] 接続エラー: {e}")
             finally:
                 self._browser_clients.discard(ws)
                 print(f"[WS] 切断 (残{len(self._browser_clients)}台)")
 
-        async with websockets.serve(handler, "127.0.0.1", WS_PORT,
+        async with websockets.serve(handler, HTTP_HOST, WS_PORT,
                                     reuse_address=True, logger=None):
             print(f"[OK] WebSocket ws://127.0.0.1:{WS_PORT}")
             await asyncio.Future()
@@ -780,44 +780,12 @@ class FF11System:
                 _.end_headers()
                 _.wfile.write(data)
 
-        srv = http.server.HTTPServer(("127.0.0.1", HTTP_PORT), H)
-        print(f"[OK] HTTP http://127.0.0.1:{HTTP_PORT}/")
+        srv = http.server.HTTPServer((HTTP_HOST, HTTP_PORT), H)
+        print(f"[OK] HTTP http://{HTTP_HOST}:{HTTP_PORT}/")
         threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     # ──────────────────────────────────────────────────────────────
-    #  マイク VAD（mippi_main.py 流用 + 011号 閾値チューニング）
-    # ──────────────────────────────────────────────────────────────
-
-    def _find_mic(self, pa):
-        """マイクをキーワードで検索。未ヒット時は全デバイスを表示してデフォルト使用。"""
-        candidates = []
-        all_inputs = []
-        for i in range(pa.get_device_count()):
-            info = pa.get_device_info_by_index(i)
-            if info["maxInputChannels"] < 1:
-                continue
-            rate = int(info["defaultSampleRate"])
-            all_inputs.append((i, info["name"], rate))
-            if MIC_SEARCH_KEYWORD in info["name"].lower():
-                candidates.append((i, info["name"], rate))
-
-        if candidates:
-            # 16000Hz に近いものを優先
-            candidates.sort(key=lambda x: abs(x[2] - SAMPLE_RATE))
-            idx, name, rate = candidates[0]
-            print(f"[MIC] 検出: [{idx}] {name} ({rate}Hz)")
-            return idx, rate
-
-        # 未ヒット → 全一覧を表示して原因調査できるように
-        print(f"[MIC] '{MIC_SEARCH_KEYWORD}' が見つかりません。利用可能なマイク一覧:")
-        for idx, name, rate in all_inputs:
-            print(f"[MIC]   [{idx}] {name} ({rate}Hz)")
-        print("[MIC] → MIC_SEARCH_KEYWORD を上記の名前に合わせてください")
-        print(f"[MIC] デフォルトデバイスで続行します")
-        return None, SAMPLE_RATE
-
-    # ──────────────────────────────────────────────────────────────
-    #  sounddevice プッシュトゥトーク
+    #  sounddevice VAD
     # ──────────────────────────────────────────────────────────────
 
     def _sd_mic_vad_session(self) -> "np.ndarray | None":
