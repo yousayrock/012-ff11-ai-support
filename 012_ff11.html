@@ -341,6 +341,10 @@ html, body {
   width:280px;
   display:flex; flex-direction:column; align-items:center;
   z-index:1000;
+  background:rgba(8,4,1,0.82);
+  border:1px solid rgba(200,150,42,0.35);
+  border-radius:18px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.7);
 }
 
 #resize-handle {
@@ -355,20 +359,25 @@ html, body {
 .cat-area {
   position:absolute; bottom:0; left:0; right:0;
   display:flex; justify-content:center;
-  animation:float 5s ease-in-out infinite;
+  animation:float 6s ease-in-out infinite;
   cursor:grab; user-select:none;
+  will-change: transform;
 }
 .cat-area:active { cursor:grabbing; }
-@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-10px);} }
-.wrap { animation:sway 4.5s ease-in-out infinite; transform-origin:center bottom; }
-.wrap.talking { animation:tsway 0.6s ease-in-out infinite; }
+@keyframes float { 0%,100%{transform:translate3d(0,0,0);} 50%{transform:translate3d(0,-8px,0);} }
+.wrap {
+  animation:sway 5s ease-in-out infinite;
+  transform-origin:center bottom;
+  will-change: transform;
+}
+.wrap.talking { animation:tsway 0.7s ease-in-out infinite; }
 @keyframes sway {
-  0%,100%{transform:rotate(0deg) translateY(0);}
-  30%{transform:rotate(3deg) translateY(-8px);} 70%{transform:rotate(-3deg) translateY(-6px);}
+  0%,100%{transform:rotate(0deg);}
+  30%{transform:rotate(2.5deg);} 70%{transform:rotate(-2.5deg);}
 }
 @keyframes tsway {
-  0%,100%{transform:rotate(0deg) translateY(0);}
-  33%{transform:rotate(4deg) translateY(-10px);} 66%{transform:rotate(-4deg) translateY(-8px);}
+  0%,100%{transform:rotate(0deg);}
+  33%{transform:rotate(3.5deg);} 66%{transform:rotate(-3.5deg);}
 }
 </style>
 </head>
@@ -580,10 +589,12 @@ function acBarStop(){
 
 function openPanel(){
   panelOpen=true; panel.classList.add('open'); resetAC();
+  setTimeout(updateClickthroughRects, 400); // トランジション後に更新
 }
 function closePanel(){
   panelOpen=false; panel.classList.remove('open');
   if(acTimer){clearTimeout(acTimer); acTimer=null;} acBarStop();
+  setTimeout(updateClickthroughRects, 400); // トランジション後に更新
 }
 function togglePanel(){ panelOpen ? closePanel() : openPanel(); }
 
@@ -863,6 +874,7 @@ function makeDraggable(elem, handle, lsKey, defaultPos){
     lx=e.clientX; ly=e.clientY;
     elem.style.left=nx+'px'; elem.style.top=ny+'px';
     localStorage.setItem(lsKey+'_x', nx); localStorage.setItem(lsKey+'_y', ny);
+    updateClickthroughRects(); // ドラッグ中のみ即時更新
   });
   document.addEventListener('mouseup', ()=>{ drag=false; });
 }
@@ -964,6 +976,7 @@ document.addEventListener('mouseup', ()=>{
 // ══════════════════════════════════════════════════
 //  デスクトップモード — クリックスルー領域通知
 // ══════════════════════════════════════════════════
+let _lastRectsJson = '';
 function updateClickthroughRects() {
   if (!window._desktopMode || !window.pywebview?.api?.update_rects) return;
   const wx = window.screenLeft ?? window.screenX ?? 0;
@@ -975,6 +988,7 @@ function updateClickthroughRects() {
     if (!el) continue;
     const st = window.getComputedStyle(el);
     if (st.display === 'none' || st.visibility === 'hidden') continue;
+    if (parseFloat(st.opacity) < 0.05) continue; // opacity:0 の非表示要素をスキップ
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     rects.push({
@@ -984,11 +998,15 @@ function updateClickthroughRects() {
       b: Math.ceil(wy + r.bottom)
     });
   }
-  window.pywebview.api.update_rects(JSON.stringify(rects));
+  // 変化がなければ Python 呼び出しをスキップ（N100 負荷対策）
+  const json = JSON.stringify(rects);
+  if (json === _lastRectsJson) return;
+  _lastRectsJson = json;
+  window.pywebview.api.update_rects(json);
 }
 
-// 300ms ごとに更新（ドラッグ中もリアルタイムに追従）
-setInterval(updateClickthroughRects, 300);
+// 1000ms ごとにチェック（変化時のみ Python に通知）
+setInterval(updateClickthroughRects, 1000);
 </script>
 </body>
 </html>
